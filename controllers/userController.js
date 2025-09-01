@@ -374,7 +374,7 @@ export const registerUser = async (req, res) => {
     }
 
     // Validate role
-    const allowedRoles = ['factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection'];
+    const allowedRoles = ['factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection', 'admin'];
     if (!allowedRoles.includes(role.toLowerCase())) {
       return res.status(400).json({
         success: false,
@@ -612,6 +612,23 @@ const validateRoleFields = (role, fields) => {
       }
       break;
 
+    case 'admin':
+      if (!fields.company_name) {
+        return {
+          isValid: false,
+          message: 'Admin role requires: name, email, password, confirm password, company name'
+        };
+      }
+      // Check for extra fields - admin should not have location fields
+      if (fields.state || fields.district || fields.taluka || fields.village || 
+          fields.warehouse_location || fields.location) {
+        return {
+          isValid: false,
+          message: 'Admin role should only have: name, email, password, confirm password, company name'
+        };
+      }
+      break;
+
     default:
       return {
         isValid: false,
@@ -620,6 +637,59 @@ const validateRoleFields = (role, fields) => {
   }
 
   return { isValid: true };
+};
+// Get all users by role
+export const getUsersByRole = async (req, res) => {
+  try {
+    const { role } = req.query;
+
+    if (!role) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role is required in query parameters'
+      });
+    }
+
+    const allowedRoles = ['factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection', 'admin'];
+    if (!allowedRoles.includes(role.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role'
+      });
+    }
+
+    const users = await User.findAll({
+      where: { role: role.toLowerCase() },
+      attributes: [
+        'id',
+        'name',
+        'phone',
+        'email',
+        'company_name',
+        'role',
+        'state',
+        'district',
+        'taluka',
+        'village',
+        'warehouse_location',
+        'location',
+        'photo'
+      ]
+    });
+
+    res.status(200).json({
+      success: true,
+      count: users.length,
+      users
+    });
+
+  } catch (error) {
+    console.error('Get Users By Role Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
 };
 
 // Get required fields for a specific role
@@ -662,6 +732,11 @@ export const getRoleFields = async (req, res) => {
         required: ['name', 'phone', 'email', 'password', 'confirmPassword', 'company_name', 'state', 'district', 'taluka', 'village'],
         optional: [],
         description: 'Inspection registration fields'
+      },
+      admin: {
+        required: ['name', 'email', 'password', 'confirmPassword', 'company_name'],
+        optional: [],
+        description: 'Admin registration fields'
       }
     };
 

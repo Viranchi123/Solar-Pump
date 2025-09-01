@@ -37,7 +37,7 @@ const User = sequelize.define('User', {
     allowNull: true
   },
   role: {
-    type: DataTypes.ENUM('factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection'),
+    type: DataTypes.ENUM('factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection', 'admin'),
     allowNull: false
   },
   // Location fields

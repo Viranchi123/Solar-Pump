@@ -7,7 +7,8 @@ import {
   getUserProfile,
   registerUser,
   updateUserPhoto,
-  getRoleFields
+  getRoleFields,
+  getUsersByRole
 } from '../controllers/userController.js';
 import { authenticateToken, checkAnyRole } from '../middleware/auth.js';
 import { generalPhotoUpload } from '../config/multer.js';
@@ -21,6 +22,7 @@ router.post('/send-forgot-password-otp', sendForgotPasswordOTP);
 router.post('/verify-forgot-password-otp', verifyForgotPasswordOTP);
 router.post('/reset-password', resetPassword);
 router.get('/role-fields/:role', getRoleFields);
+router.get('/role-users',getUsersByRole)
 
 // Protected routes (authentication required)
 router.get('/profile', authenticateToken, getUserProfile);
