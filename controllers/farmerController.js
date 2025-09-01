@@ -1,0 +1,389 @@
+import WorkOrderFarmer from '../models/WorkOrderFarmer.js';
+import WorkOrderContractor from '../models/WorkOrderContractor.js';
+import WorkOrder from '../models/WorkOrder.js';
+import User from '../models/User.js';
+import WorkOrderStage from '../models/WorkOrderStage.js';
+
+// Step 1: Farmer receives units from contractor
+export const receiveUnitsFromContractor = async (req, res) => {
+  try {
+    const {
+      work_order_id,
+      total_quantity_received,
+      hp_3_received,
+      hp_5_received,
+      hp_7_5_received
+    } = req.body;
+
+    // Validate required fields
+    if (!work_order_id || total_quantity_received === undefined || hp_3_received === undefined || hp_5_received === undefined || hp_7_5_received === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'All required fields must be provided: work_order_id, total_quantity_received, hp_3_received, hp_5_received, hp_7_5_received'
+      });
+    }
+
+    // Validate quantities are non-negative numbers
+    if (total_quantity_received < 0 || hp_3_received < 0 || hp_5_received < 0 || hp_7_5_received < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'All quantities must be non-negative numbers (0 or greater)'
+      });
+    }
+
+    // Validate that HP quantities sum up to total quantity received
+    const sumOfHpQuantities = parseInt(hp_3_received) + parseInt(hp_5_received) + parseInt(hp_7_5_received);
+    if (sumOfHpQuantities !== parseInt(total_quantity_received)) {
+      return res.status(400).json({
+        success: false,
+        message: `Sum of HP quantities (${sumOfHpQuantities}) must equal total quantity received (${total_quantity_received})`
+      });
+    }
+
+    // Check if work order exists
+    const workOrder = await WorkOrder.findByPk(work_order_id);
+    if (!workOrder) {
+      return res.status(404).json({
+        success: false,
+        message: `Work order with ID ${work_order_id} not found. Please check the work order ID and try again.`
+      });
+    }
+
+    // FLOW VALIDATION: Check if work order is in the correct stage for farmer
+    if (workOrder.current_stage !== 'farmer_inspection') {
+      return res.status(400).json({
+        success: false,
+        message: `Work order is not available for farmer operations. Current stage: ${workOrder.current_stage}. Expected stage: farmer_inspection.`
+      });
+    }
+
+    // FLOW VALIDATION: Check if contractor has properly dispatched units
+    const contractorEntry = await WorkOrderContractor.findOne({
+      where: { 
+        work_order_id,
+        status: ['all_units_dispatched']
+      }
+    });
+
+    if (!contractorEntry) {
+      return res.status(400).json({
+        success: false,
+        message: 'This work order has not been dispatched from contractor. Please wait for contractor to complete the dispatch process before proceeding with farmer operations.'
+      });
+    }
+
+    // Validate that farmer quantities don't exceed contractor dispatched quantities
+    if (total_quantity_received > contractorEntry.total_quantity_assigned) {
+      return res.status(400).json({
+        success: false,
+        message: `Farmer quantity (${total_quantity_received}) cannot exceed contractor dispatched quantity (${contractorEntry.total_quantity_assigned})`
+      });
+    }
+
+    if (hp_3_received > contractorEntry.hp_3_to_farmer) {
+      return res.status(400).json({
+        success: false,
+        message: `3 HP farmer quantity (${hp_3_received}) cannot exceed contractor dispatched 3 HP quantity (${contractorEntry.hp_3_to_farmer})`
+      });
+    }
+
+    if (hp_5_received > contractorEntry.hp_5_to_farmer) {
+      return res.status(400).json({
+        success: false,
+        message: `5 HP farmer quantity (${hp_5_received}) cannot exceed contractor dispatched 5 HP quantity (${contractorEntry.hp_5_to_farmer})`
+      });
+    }
+
+    if (hp_7_5_received > contractorEntry.hp_7_5_to_farmer) {
+      return res.status(400).json({
+        success: false,
+        message: `7.5 HP farmer quantity (${hp_7_5_received}) cannot exceed contractor dispatched 7.5 HP quantity (${contractorEntry.hp_7_5_to_farmer})`
+      });
+    }
+
+    // FLOW VALIDATION: Check if farmer user has permission
+    const currentUser = await User.findByPk(req.user.id);
+    if (currentUser.role !== 'farmer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Only farmer users can perform this operation.'
+      });
+    }
+
+    // Check if farmer entry already exists for this work order
+    const existingFarmerEntry = await WorkOrderFarmer.findOne({
+      where: { work_order_id }
+    });
+
+    let farmerEntry;
+    let totalRemainingToReceive;
+    let hp3RemainingToReceive;
+    let hp5RemainingToReceive;
+    let hp75RemainingToReceive;
+
+    if (existingFarmerEntry) {
+      // Update existing entry - check against remaining units to receive from contractor
+      const currentTotalReceived = existingFarmerEntry.total_quantity_received || 0;
+      const currentHp3Received = existingFarmerEntry.hp_3_received || 0;
+      const currentHp5Received = existingFarmerEntry.hp_5_received || 0;
+      const currentHp75Received = existingFarmerEntry.hp_7_5_received || 0;
+
+      // Calculate remaining units to receive from contractor
+      totalRemainingToReceive = contractorEntry.total_quantity_assigned - currentTotalReceived;
+      hp3RemainingToReceive = contractorEntry.hp_3_to_farmer - currentHp3Received;
+      hp5RemainingToReceive = contractorEntry.hp_5_to_farmer - currentHp5Received;
+      hp75RemainingToReceive = contractorEntry.hp_7_5_to_farmer - currentHp75Received;
+
+      // Validate that new received quantities don't exceed remaining to receive
+      if (total_quantity_received > totalRemainingToReceive) {
+        return res.status(400).json({
+          success: false,
+          message: `Farmer quantity (${total_quantity_received}) cannot exceed remaining units to receive from contractor (${totalRemainingToReceive})`
+        });
+      }
+
+      if (hp_3_received > hp3RemainingToReceive) {
+        return res.status(400).json({
+          success: false,
+          message: `3 HP farmer quantity (${hp_3_received}) cannot exceed remaining 3 HP units to receive (${hp3RemainingToReceive})`
+        });
+      }
+
+      if (hp_5_received > hp5RemainingToReceive) {
+        return res.status(400).json({
+          success: false,
+          message: `5 HP farmer quantity (${hp_5_received}) cannot exceed remaining 5 HP units to receive (${hp5RemainingToReceive})`
+        });
+      }
+
+      if (hp_7_5_received > hp75RemainingToReceive) {
+        return res.status(400).json({
+          success: false,
+          message: `7.5 HP farmer quantity (${hp_7_5_received}) cannot exceed remaining 7.5 HP units to receive (${hp75RemainingToReceive})`
+        });
+      }
+
+      // Add to existing received quantities
+      const newTotalReceived = currentTotalReceived + total_quantity_received;
+      const newHp3Received = currentHp3Received + hp_3_received;
+      const newHp5Received = currentHp5Received + hp_5_received;
+      const newHp75Received = currentHp75Received + hp_7_5_received;
+
+      // Update existing entry
+      farmerEntry = await existingFarmerEntry.update({
+        total_quantity_received: newTotalReceived,
+        hp_3_received: newHp3Received,
+        hp_5_received: newHp5Received,
+        hp_7_5_received: newHp75Received,
+        farmer_status: 'units_received',
+        action_by: req.user.id
+      });
+
+      // Calculate new remaining units to receive
+      totalRemainingToReceive = contractorEntry.total_quantity_assigned - newTotalReceived;
+      hp3RemainingToReceive = contractorEntry.hp_3_to_farmer - newHp3Received;
+      hp5RemainingToReceive = contractorEntry.hp_5_to_farmer - newHp5Received;
+      hp75RemainingToReceive = contractorEntry.hp_7_5_to_farmer - newHp75Received;
+
+    } else {
+      // Create new entry
+      farmerEntry = await WorkOrderFarmer.create({
+        work_order_id: parseInt(work_order_id),
+        contractor_entry_id: contractorEntry.id,
+        total_quantity_received: parseInt(total_quantity_received),
+        hp_3_received: parseInt(hp_3_received),
+        hp_5_received: parseInt(hp_5_received),
+        hp_7_5_received: parseInt(hp_7_5_received),
+        farmer_status: 'units_received',
+        action_by: req.user.id
+      });
+
+      // Calculate remaining units to receive
+      totalRemainingToReceive = contractorEntry.total_quantity_assigned - total_quantity_received;
+      hp3RemainingToReceive = contractorEntry.hp_3_to_farmer - hp_3_received;
+      hp5RemainingToReceive = contractorEntry.hp_5_to_farmer - hp_5_received;
+      hp75RemainingToReceive = contractorEntry.hp_7_5_to_farmer - hp_7_5_received;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Units received by farmer successfully',
+      data: {
+        id: farmerEntry.id,
+        work_order_id: farmerEntry.work_order_id,
+        total_quantity_received: farmerEntry.total_quantity_received,
+        hp_3_received: farmerEntry.hp_3_received,
+        hp_5_received: farmerEntry.hp_5_received,
+        hp_7_5_received: farmerEntry.hp_7_5_received,
+        farmer_status: farmerEntry.farmer_status,
+        action_by: farmerEntry.action_by,
+        contractor_dispatch_info: {
+          total_dispatched_by_contractor: contractorEntry.total_quantity_assigned,
+          hp_3_dispatched_by_contractor: contractorEntry.hp_3_to_farmer,
+          hp_5_dispatched_by_contractor: contractorEntry.hp_5_to_farmer,
+          hp_7_5_dispatched_by_contractor: contractorEntry.hp_7_5_to_farmer
+        },
+        remaining_to_receive: {
+          total: totalRemainingToReceive,
+          hp_3: hp3RemainingToReceive,
+          hp_5: hp5RemainingToReceive,
+          hp_7_5: hp75RemainingToReceive
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error receiving units by farmer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Step 2: Farmer reports defect
+export const reportDefect = async (req, res) => {
+  try {
+    console.log('Farmer Defect Report - Request received:', {
+      body: req.body,
+      files: req.files ? Object.keys(req.files) : 'No files'
+    });
+
+    const {
+      work_order_id,
+      issue_title,
+      description
+    } = req.body;
+
+    // Get uploaded files
+    const photo_1 = req.files?.photo_1?.[0];
+    const photo_2 = req.files?.photo_2?.[0];
+    const photo_3 = req.files?.photo_3?.[0];
+
+    console.log('Farmer Defect Report - Files extracted:', {
+      photo_1: photo_1?.filename,
+      photo_2: photo_2?.filename,
+      photo_3: photo_3?.filename
+    });
+
+    // Validate required fields
+    if (!work_order_id || !issue_title || !description) {
+      return res.status(400).json({
+        success: false,
+        message: 'work_order_id, issue_title, and description are required fields'
+      });
+    }
+
+    // Validate that at least one photo is uploaded
+    if (!photo_1 && !photo_2 && !photo_3) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one photo is required for defect report'
+      });
+    }
+
+    // Check if work order exists
+    const workOrder = await WorkOrder.findByPk(work_order_id);
+    if (!workOrder) {
+      return res.status(404).json({
+        success: false,
+        message: `Work order with ID ${work_order_id} not found. Please check the work order ID and try again.`
+      });
+    }
+
+    // FLOW VALIDATION: Check if work order is in the correct stage for farmer
+    if (workOrder.current_stage !== 'farmer_inspection') {
+      return res.status(400).json({
+        success: false,
+        message: `Work order is not available for farmer operations. Current stage: ${workOrder.current_stage}. Expected stage: farmer_inspection.`
+      });
+    }
+
+    // Check if farmer entry exists
+    const farmerEntry = await WorkOrderFarmer.findOne({
+      where: { work_order_id }
+    });
+
+    if (!farmerEntry) {
+      return res.status(404).json({
+        success: false,
+        message: 'No farmer entry found for this work order. Please receive units from contractor first.'
+      });
+    }
+
+    // FLOW VALIDATION: Check if farmer user has permission for this work order
+    const currentUser = await User.findByPk(req.user.id);
+    if (currentUser.role !== 'farmer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Only farmer users can perform this operation.'
+      });
+    }
+
+    // Prepare update data
+    const updateData = {
+      issue_title,
+      description,
+      farmer_status: 'defect_reported',
+      action_by: req.user.id
+    };
+
+    // Add photo file paths if files are uploaded
+    if (photo_1) {
+      updateData.photo_1 = photo_1.filename;
+    }
+    if (photo_2) {
+      updateData.photo_2 = photo_2.filename;
+    }
+    if (photo_3) {
+      updateData.photo_3 = photo_3.filename;
+    }
+
+    // Update farmer entry with defect report details
+    const updatedFarmerEntry = await farmerEntry.update(updateData);
+
+    // Update work order status to indicate defect reported
+    await WorkOrder.update(
+      { current_stage: 'defect_reported' },
+      { where: { id: work_order_id } }
+    );
+
+    // Update farmer stage status
+    await WorkOrderStage.update(
+      { 
+        status: 'defect_reported',
+        notes: `Defect reported by farmer: ${issue_title}`
+      },
+      { where: { work_order_id, stage_name: 'farmer' } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Defect reported successfully',
+      data: {
+        id: updatedFarmerEntry.id,
+        work_order_id: updatedFarmerEntry.work_order_id,
+        issue_title: updatedFarmerEntry.issue_title,
+        description: updatedFarmerEntry.description,
+        farmer_status: updatedFarmerEntry.farmer_status,
+        photos: {
+          photo_1: updatedFarmerEntry.photo_1,
+          photo_2: updatedFarmerEntry.photo_2,
+          photo_3: updatedFarmerEntry.photo_3
+        },
+        action_by: updatedFarmerEntry.action_by,
+        updatedAt: updatedFarmerEntry.updatedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Error reporting defect:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
