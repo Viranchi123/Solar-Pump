@@ -11,6 +11,7 @@ import contractorRoutes from './contractor.js';
 import inspectionRoutes from './inspection.js';
 import farmerRoutes from './farmer.js';
 import workOrderStageRoutes from './workOrderStage.js';
+import barcodeRoutes from './barcode.js';
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use('/contractor', contractorRoutes);
 router.use('/inspection', inspectionRoutes);
 router.use('/farmer', farmerRoutes);
 router.use('/work-order-stages', workOrderStageRoutes);
+router.use('/barcode', barcodeRoutes);
 
 export default router;

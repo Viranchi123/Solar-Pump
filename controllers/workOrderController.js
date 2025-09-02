@@ -1,7 +1,15 @@
 import WorkOrder from '../models/WorkOrder.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import WorkOrderFactory from '../models/WorkOrderFactory.js';
+import WorkOrderJSR from '../models/WorkOrderJSR.js';
+import WorkOrderWarehouse from '../models/WorkOrderWarehouse.js';
+import WorkOrderCP from '../models/WorkOrderCP.js';
+import WorkOrderContractor from '../models/WorkOrderContractor.js';
+import WorkOrderFarmer from '../models/WorkOrderFarmer.js';
+import WorkOrderInspection from '../models/WorkOrderInspection.js';
 import User from '../models/User.js';
 import { Op } from 'sequelize';
+import { sequelize } from '../config/dbConnection.js';
 
 // Create work order by admin
 export const createWorkOrder = async (req, res) => {
@@ -574,6 +582,292 @@ export const getAllWorkOrders = async (req, res) => {
 
   } catch (error) {
     console.error('Error retrieving work orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Dashboard API - Get unit counts across all workflow stages for latest work order only
+export const getDashboardSummary = async (req, res) => {
+  try {
+    // Get the latest work order (most recently created)
+    const latestWorkOrder = await WorkOrder.findOne({
+      where: {
+        status: {
+          [Op.ne]: 'cancelled'
+        }
+      },
+      order: [['createdAt', 'DESC']],
+      include: [
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ]
+    });
+
+    if (!latestWorkOrder) {
+      return res.status(200).json({
+        success: true,
+        message: 'No work orders found',
+        data: {
+          summary: {
+            factory: { units: 0, label: 'Factory', icon: 'factory', color: 'light-blue' },
+            jsr: { units: 0, label: 'PDI', icon: 'document', color: 'light-green' },
+            warehouse: { units: 0, label: 'Warehouse', icon: 'warehouse', color: 'light-yellow' },
+            cp: { units: 0, label: 'CP', icon: 'person-gear', color: 'light-blue' },
+            contractor: { units: 0, label: 'Contractor', icon: 'briefcase', color: 'light-purple' },
+            farmer: { units: 0, label: 'Farmer', icon: 'tractor', color: 'light-green', additionalInfo: { installed: 0 } },
+            inspection: { units: 0, label: 'Inspection', icon: 'magnifying-glass', color: 'light-green', additionalInfo: { rejected: 0 } }
+          },
+          metrics: {
+            totalWorkOrders: 0,
+            activeWorkOrders: 0,
+            completedWorkOrders: 0,
+            totalUnitsInSystem: 0
+          },
+          latestWorkOrder: null,
+          recentActivity: []
+        }
+      });
+    }
+
+    const latestWorkOrderId = latestWorkOrder.id;
+
+    // Use database aggregation for better performance - only for latest work order
+    const [
+      factoryManufactured,
+      factoryDispatchedToJSR,
+      jsrReceived,
+      jsrDispatchedToWarehouse,
+      warehouseReceived,
+      warehouseDispatchedToCP,
+      cpReceived,
+      cpDispatchedToContractor,
+      contractorReceived,
+      contractorDispatchedToFarmer,
+      farmerReceived,
+      inspectionReceived,
+      installedResult,
+      rejectedResult,
+      workOrderStats
+    ] = await Promise.all([
+      // Factory: total manufactured units
+      WorkOrderFactory.sum('total_quantity_manufactured', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Factory: total units dispatched to JSR
+      WorkOrderFactory.sum('total_quantity_to_jsr', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // JSR: total units received from factory
+      WorkOrderJSR.sum('total_quantity_received', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // JSR: total units dispatched to warehouse
+      WorkOrderJSR.sum('total_quantity_to_warehouse', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Warehouse: total units received from JSR
+      WorkOrderWarehouse.sum('total_quantity_in_warehouse', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Warehouse: total units dispatched to CP
+      WorkOrderWarehouse.sum('total_quantity_to_cp', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // CP: total units received from warehouse
+      WorkOrderCP.sum('total_quantity_to_cp', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // CP: total units dispatched to contractor
+      WorkOrderCP.sum('total_quantity_assigned', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Contractor: total units received from CP
+      WorkOrderContractor.sum('total_quantity_to_contractor', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Contractor: total units dispatched to farmer
+      WorkOrderContractor.sum('total_quantity_assigned', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Farmer: total units received from contractor
+      WorkOrderFarmer.sum('total_quantity_received', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Inspection: total units received for inspection
+      WorkOrderInspection.sum('total_quantity_for_inspection', {
+        where: { work_order_id: latestWorkOrderId }
+      }),
+      
+      // Installed units - completed farmer entries for latest work order
+      WorkOrderFarmer.sum('total_quantity_received', {
+        where: { 
+          work_order_id: latestWorkOrderId,
+          farmer_status: 'completed' 
+        }
+      }),
+      
+      // Rejected units - rejected inspection entries for latest work order
+      WorkOrderInspection.sum('total_quantity_for_inspection', {
+        where: { 
+          work_order_id: latestWorkOrderId,
+          inspection_status: 'rejected' 
+        }
+      }),
+      
+      // Work order statistics (all work orders for metrics)
+      WorkOrder.findAll({
+        where: { status: { [Op.ne]: 'cancelled' } },
+        attributes: [
+          'status',
+          [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        ],
+        group: ['status']
+      })
+    ]);
+
+    // Calculate remaining units in each stage
+    const factoryUnits = (factoryManufactured || 0) - (factoryDispatchedToJSR || 0);
+    const jsrUnits = (jsrReceived || 0) - (jsrDispatchedToWarehouse || 0);
+    const warehouseUnits = (warehouseReceived || 0) - (warehouseDispatchedToCP || 0);
+    const cpUnits = (cpReceived || 0) - (cpDispatchedToContractor || 0);
+    const contractorUnits = (contractorReceived || 0) - (contractorDispatchedToFarmer || 0);
+    const farmerUnits = farmerReceived || 0;
+    const inspectionUnits = inspectionReceived || 0;
+    const installedUnits = installedResult || 0;
+    const rejectedUnits = rejectedResult || 0;
+
+    // Calculate additional metrics from work order statistics
+    const totalWorkOrders = workOrderStats.reduce((sum, stat) => sum + parseInt(stat.dataValues.count), 0);
+    const activeWorkOrders = workOrderStats.find(stat => stat.status === 'in_progress')?.dataValues.count || 0;
+    const completedWorkOrders = workOrderStats.find(stat => stat.status === 'completed')?.dataValues.count || 0;
+
+    // Get recent work orders for activity feed
+    const recentWorkOrders = await WorkOrder.findAll({
+      order: [['updatedAt', 'DESC']],
+      limit: 5,
+      include: [
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ]
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Dashboard summary retrieved successfully',
+      data: {
+        summary: {
+          factory: {
+            units: factoryUnits,
+            label: 'Factory',
+            icon: 'factory',
+            color: 'light-blue'
+          },
+          jsr: {
+            units: jsrUnits,
+            label: 'PDI',
+            icon: 'document',
+            color: 'light-green'
+          },
+          warehouse: {
+            units: warehouseUnits,
+            label: 'Warehouse',
+            icon: 'warehouse',
+            color: 'light-yellow'
+          },
+          cp: {
+            units: cpUnits,
+            label: 'CP',
+            icon: 'person-gear',
+            color: 'light-blue'
+          },
+          contractor: {
+            units: contractorUnits,
+            label: 'Contractor',
+            icon: 'briefcase',
+            color: 'light-purple'
+          },
+          farmer: {
+            units: farmerUnits,
+            label: 'Farmer',
+            icon: 'tractor',
+            color: 'light-green',
+            additionalInfo: {
+              installed: installedUnits
+            }
+          },
+          inspection: {
+            units: inspectionUnits,
+            label: 'Inspection',
+            icon: 'magnifying-glass',
+            color: 'light-green',
+            additionalInfo: {
+              rejected: rejectedUnits
+            }
+          }
+        },
+        metrics: {
+          totalWorkOrders,
+          activeWorkOrders,
+          completedWorkOrders,
+          totalUnitsInSystem: latestWorkOrder.total_quantity
+        },
+        latestWorkOrder: {
+          id: latestWorkOrder.id,
+          work_order_number: latestWorkOrder.work_order_number,
+          title: latestWorkOrder.title,
+          region: latestWorkOrder.region,
+          total_quantity: latestWorkOrder.total_quantity,
+          status: latestWorkOrder.status,
+          current_stage: latestWorkOrder.current_stage,
+          created_by: {
+            id: latestWorkOrder.creator?.id,
+            name: latestWorkOrder.creator?.name,
+            email: latestWorkOrder.creator?.email,
+            role: latestWorkOrder.creator?.role
+          },
+          createdAt: latestWorkOrder.createdAt,
+          updatedAt: latestWorkOrder.updatedAt
+        },
+        recentActivity: recentWorkOrders.map(wo => ({
+          id: wo.id,
+          work_order_number: wo.work_order_number,
+          title: wo.title,
+          status: wo.status,
+          current_stage: wo.current_stage,
+          created_by: {
+            id: wo.creator?.id,
+            name: wo.creator?.name,
+            email: wo.creator?.email,
+            role: wo.creator?.role
+          },
+          updatedAt: wo.updatedAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Error retrieving dashboard summary:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',

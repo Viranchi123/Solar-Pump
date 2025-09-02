@@ -1,5 +1,5 @@
 import express from 'express';
-import { createWorkOrder, getWorkOrdersWithApprovalStatus, getWorkOrderWithApprovalStatus, getAllWorkOrders } from '../controllers/workOrderController.js';
+import { createWorkOrder, getWorkOrdersWithApprovalStatus, getWorkOrderWithApprovalStatus, getAllWorkOrders, getDashboardSummary } from '../controllers/workOrderController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { farmerListUpload, handleMulterError } from '../config/multer.js';
 
@@ -19,5 +19,8 @@ router.get('/approval-status/:id', authenticateToken, getWorkOrderWithApprovalSt
 
 // Alternative route for easier filtering by approval status
 router.get('/status/:status', authenticateToken, getWorkOrdersWithApprovalStatus);
+
+// Dashboard summary route
+router.get('/dashboard/summary', authenticateToken, getDashboardSummary);
 
 export default router;

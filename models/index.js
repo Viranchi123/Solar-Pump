@@ -9,6 +9,7 @@ import WorkOrderContractor from './WorkOrderContractor.js';
 import WorkOrderInspection from './WorkOrderInspection.js';
 import WorkOrderFarmer from './WorkOrderFarmer.js';
 import WorkOrderStage from './WorkOrderStage.js';
+import BarcodeData from './BarcodeData.js';
 
 // Set up associations
 User.hasMany(Remark, { foreignKey: 'user_id', as: 'remarks' });
@@ -103,8 +104,12 @@ WorkOrderStage.belongsTo(WorkOrderStage, { foreignKey: 'next_stage_id', as: 'nex
 WorkOrderStage.hasOne(WorkOrderStage, { foreignKey: 'previous_stage_id', as: 'nextStageInSequence' });
 WorkOrderStage.hasOne(WorkOrderStage, { foreignKey: 'next_stage_id', as: 'previousStageInSequence' });
 
+// BarcodeData associations
+User.hasMany(BarcodeData, { foreignKey: 'uploaded_by', as: 'uploadedBarcodeData' });
+BarcodeData.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
+
 // Export models
-export { User, Remark, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWarehouse, WorkOrderCP, WorkOrderContractor, WorkOrderInspection, WorkOrderFarmer, WorkOrderStage };
+export { User, Remark, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWarehouse, WorkOrderCP, WorkOrderContractor, WorkOrderInspection, WorkOrderFarmer, WorkOrderStage, BarcodeData };
 
 // Sync all models with database
 export const syncModels = async () => {
@@ -120,6 +125,7 @@ export const syncModels = async () => {
     await WorkOrderInspection.sync({ alter: true });
     await WorkOrderFarmer.sync({ alter: true });
     await WorkOrderStage.sync({ alter: true });
+    await BarcodeData.sync({ alter: true });
     console.log('✅ All models synchronized successfully');
   } catch (error) {
     console.error('❌ Error syncing models:', error);
