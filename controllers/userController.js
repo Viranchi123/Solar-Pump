@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import { Op } from 'sequelize';
 import { User } from '../models/index.js';
+import { google } from 'googleapis';
 
 // Email transporter configuration
 const transporter = nodemailer.createTransport({
@@ -755,6 +756,111 @@ export const getRoleFields = async (req, res) => {
 
   } catch (error) {
     console.error('Get Role Fields Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Google OAuth login for users
+export const loginWithGoogle = async (req, res) => {
+  try {
+    const { googleToken } = req.body;
+
+    if (!googleToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google token is required'
+      });
+    }
+
+    // Verify Google token and get user info
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+
+    oauth2Client.setCredentials({ access_token: googleToken });
+
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const { data } = await oauth2.userinfo.get();
+
+    const { id: googleId, email, name, picture } = data;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email not provided by Google'
+      });
+    }
+
+    // Find or create user
+    let user = await User.findOne({
+      where: {
+        [Op.or]: [
+          { email },
+          { google_id: googleId }
+        ]
+      }
+    });
+
+    if (user) {
+      // Update existing user with Google ID if not set
+      if (!user.google_id) {
+        await user.update({
+          google_id: googleId,
+          auth_method: 'google'
+        });
+      }
+    } else {
+      // Create new user
+      user = await User.create({
+        name: name,
+        email,
+        phone: '0000000000', // Default phone, user should update
+        google_id: googleId,
+        auth_method: 'google',
+        role: 'farmer', // Default role, user can change
+        company_name: 'Google User'
+      });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        id: user.id, 
+        role: user.role,
+        phone: user.phone 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '3d' }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Google login successful',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email,
+        company_name: user.company_name,
+        role: user.role,
+        photo: user.photo,
+        state: user.state,
+        district: user.district,
+        taluka: user.taluka,
+        village: user.village,
+        warehouse_location: user.warehouse_location,
+        location: user.location,
+        auth_method: user.auth_method
+      }
+    });
+
+  } catch (error) {
+    console.error('Google Login Error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

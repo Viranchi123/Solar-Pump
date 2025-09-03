@@ -30,6 +30,16 @@ const User = sequelize.define('User', {
   },
   password: {
     type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  google_id: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    unique: true
+  },
+  auth_method: {
+    type: DataTypes.ENUM('password', 'google'),
+    defaultValue: 'password',
     allowNull: false
   },
   company_name: {
@@ -86,12 +96,12 @@ const User = sequelize.define('User', {
   timestamps: true,
   hooks: {
     beforeCreate: async (user) => {
-      if (user.password) {
+      if (user.password && user.auth_method === 'password') {
         user.password = await bcrypt.hash(user.password, 10);
       }
     },
     beforeUpdate: async (user) => {
-      if (user.changed('password')) {
+      if (user.changed('password') && user.auth_method === 'password') {
         user.password = await bcrypt.hash(user.password, 10);
       }
     }

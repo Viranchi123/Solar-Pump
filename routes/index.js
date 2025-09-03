@@ -12,6 +12,8 @@ import inspectionRoutes from './inspection.js';
 import farmerRoutes from './farmer.js';
 import workOrderStageRoutes from './workOrderStage.js';
 import barcodeRoutes from './barcode.js';
+import adminRoutes from './admin.js';
+import googleAuthRoutes from './googleAuth.js';
 
 const router = express.Router();
 
@@ -28,5 +30,7 @@ router.use('/inspection', inspectionRoutes);
 router.use('/farmer', farmerRoutes);
 router.use('/work-order-stages', workOrderStageRoutes);
 router.use('/barcode', barcodeRoutes);
+router.use('/admin', adminRoutes);
+router.use('/google', googleAuthRoutes);
 
 export default router;

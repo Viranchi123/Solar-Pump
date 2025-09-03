@@ -8,7 +8,8 @@ import {
   registerUser,
   updateUserPhoto,
   getRoleFields,
-  getUsersByRole
+  getUsersByRole,
+  loginWithGoogle
 } from '../controllers/userController.js';
 import { authenticateToken, checkAnyRole } from '../middleware/auth.js';
 import { generalPhotoUpload } from '../config/multer.js';
@@ -18,6 +19,7 @@ const router = express.Router();
 // Public routes (no authentication required)
 router.post('/register', registerUser);
 router.post('/login', loginWithPassword);
+router.post('/login/google', loginWithGoogle);
 router.post('/send-forgot-password-otp', sendForgotPasswordOTP);
 router.post('/verify-forgot-password-otp', verifyForgotPasswordOTP);
 router.post('/reset-password', resetPassword);

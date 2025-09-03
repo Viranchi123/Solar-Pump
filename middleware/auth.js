@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { User } from '../models/index.js';
+import { User, Admin } from '../models/index.js';
 
 export const authenticateToken = async (req, res, next) => {
   try {
@@ -16,8 +16,15 @@ export const authenticateToken = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Check if user still exists
-    const user = await User.findByPk(decoded.id);
+    // Check if user exists in either User or Admin table
+    let user = await User.findByPk(decoded.id);
+    let isAdmin = false;
+    
+    if (!user) {
+      user = await Admin.findByPk(decoded.id);
+      isAdmin = true;
+    }
+    
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -37,7 +44,9 @@ export const authenticateToken = async (req, res, next) => {
     req.user = {
       id: user.id,
       role: user.role,
-      phone: user.phone
+      phone: user.phone || null,
+      email: user.email,
+      isAdmin
     };
 
     next();
