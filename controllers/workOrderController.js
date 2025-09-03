@@ -919,7 +919,7 @@ export const getRoleSummary = async (req, res) => {
             totalUnits: 0,
             deliveredUnits: 0,
             remainingUnits: 0,
-            workOrderId: null
+            workOrderNumber: null
           }
         }
       });
@@ -1116,7 +1116,7 @@ export const getRoleSummary = async (req, res) => {
         },
         summary: {
           ...summary,
-          workOrderId: currentWorkOrder.id
+          workOrderNumber: currentWorkOrder.work_order_number
         }
       }
     });
