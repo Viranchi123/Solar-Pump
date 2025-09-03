@@ -1,5 +1,5 @@
 import express from 'express';
-import { createWorkOrder, getWorkOrdersWithApprovalStatus, getWorkOrderWithApprovalStatus, getAllWorkOrders, getDashboardSummary } from '../controllers/workOrderController.js';
+import { createWorkOrder, getWorkOrdersWithApprovalStatus, getWorkOrderWithApprovalStatus, getAllWorkOrders, getDashboardSummary, getRoleSummary } from '../controllers/workOrderController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { farmerListUpload, handleMulterError } from '../config/multer.js';
 
@@ -22,5 +22,8 @@ router.get('/status/:status', authenticateToken, getWorkOrdersWithApprovalStatus
 
 // Dashboard summary route
 router.get('/dashboard/summary', authenticateToken, getDashboardSummary);
+
+// Role-based summary route
+router.get('/summary', getRoleSummary);
 
 export default router;

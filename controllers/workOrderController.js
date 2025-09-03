@@ -875,3 +875,258 @@ export const getDashboardSummary = async (req, res) => {
     });
   }
 };
+
+// Role-based summary API
+export const getRoleSummary = async (req, res) => {
+  try {
+    const { role } = req.query;
+
+    // Validate role parameter
+    const validRoles = ['admin', 'factory', 'jsr', 'warehouse', 'cp', 'contractor', 'farmer', 'inspection'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Valid roles are: admin, factory, jsr, warehouse, cp, contractor, farmer, inspection'
+      });
+    }
+
+    // Get the latest work order (current work order)
+    const currentWorkOrder = await WorkOrder.findOne({
+      where: {
+        status: {
+          [Op.ne]: 'cancelled'
+        }
+      },
+      order: [['createdAt', 'DESC']],
+      include: [
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ]
+    });
+
+    if (!currentWorkOrder) {
+      return res.status(200).json({
+        success: true,
+        message: 'No work orders found',
+        data: {
+          role,
+          totalWorkOrders: 0,
+          currentWorkOrder: null,
+          summary: {
+            totalUnits: 0,
+            deliveredUnits: 0,
+            remainingUnits: 0,
+            workOrderId: null
+          }
+        }
+      });
+    }
+
+    const currentWorkOrderId = currentWorkOrder.id;
+
+    // Get total work orders count for this role
+    const totalWorkOrders = await WorkOrder.count({
+      where: {
+        status: {
+          [Op.ne]: 'cancelled'
+        }
+      }
+    });
+
+    let summary = {};
+
+    switch (role) {
+      case 'admin':
+        summary = {
+          totalUnits: currentWorkOrder.total_quantity,
+          deliveredUnits: currentWorkOrder.total_quantity, // Admin creates the total units
+          remainingUnits: 0
+        };
+        break;
+
+      case 'factory':
+        const factoryData = await WorkOrderFactory.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (factoryData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: factoryData.total_quantity_manufactured || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (factoryData.total_quantity_manufactured || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+
+      case 'jsr':
+        const jsrData = await WorkOrderJSR.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (jsrData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: jsrData.total_quantity_received || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (jsrData.total_quantity_received || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+
+      case 'warehouse':
+        const warehouseData = await WorkOrderWarehouse.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (warehouseData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: warehouseData.total_quantity_in_warehouse || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (warehouseData.total_quantity_in_warehouse || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+
+      case 'cp':
+        const cpData = await WorkOrderCP.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (cpData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: cpData.total_quantity_to_cp || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (cpData.total_quantity_to_cp || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+
+      case 'contractor':
+        const contractorData = await WorkOrderContractor.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (contractorData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: contractorData.total_quantity_to_contractor || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (contractorData.total_quantity_to_contractor || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+
+      case 'farmer':
+        const farmerData = await WorkOrderFarmer.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (farmerData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: farmerData.total_quantity_received || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (farmerData.total_quantity_received || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+
+      case 'inspection':
+        const inspectionData = await WorkOrderInspection.findOne({
+          where: { work_order_id: currentWorkOrderId }
+        });
+        
+        if (inspectionData) {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: inspectionData.total_quantity_for_inspection || 0,
+            remainingUnits: (currentWorkOrder.total_quantity - (inspectionData.total_quantity_for_inspection || 0))
+          };
+        } else {
+          summary = {
+            totalUnits: currentWorkOrder.total_quantity,
+            deliveredUnits: 0,
+            remainingUnits: currentWorkOrder.total_quantity
+          };
+        }
+        break;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `${role} role summary retrieved successfully`,
+      data: {
+        role,
+        totalWorkOrders,
+        currentWorkOrder: {
+          id: currentWorkOrder.id,
+          work_order_number: currentWorkOrder.work_order_number,
+          title: currentWorkOrder.title,
+          region: currentWorkOrder.region,
+          total_quantity: currentWorkOrder.total_quantity,
+          hp_3_quantity: currentWorkOrder.hp_3_quantity,
+          hp_5_quantity: currentWorkOrder.hp_5_quantity,
+          hp_7_5_quantity: currentWorkOrder.hp_7_5_quantity,
+          status: currentWorkOrder.status,
+          current_stage: currentWorkOrder.current_stage,
+          created_by: {
+            id: currentWorkOrder.creator?.id,
+            name: currentWorkOrder.creator?.name,
+            email: currentWorkOrder.creator?.email,
+            role: currentWorkOrder.creator?.role
+          },
+          createdAt: currentWorkOrder.createdAt,
+          updatedAt: currentWorkOrder.updatedAt
+        },
+        summary: {
+          ...summary,
+          workOrderId: currentWorkOrder.id
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error retrieving role summary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
