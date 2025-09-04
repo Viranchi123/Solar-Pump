@@ -262,13 +262,28 @@ export const listRemarks = async (req, res) => {
       work_order_number: remark.workOrder?.work_order_number,
       user_name: remark.user.name,
       user_role: remark.user.role,
-      access: remark.access
+      access: remark.access,
+      is_own_remark: remark.created_by === req.user.id
     }));
+
+    // Separate remarks into own and other
+    const ownRemarks = transformedRemarks.filter(remark => remark.is_own_remark);
+    const otherRemarks = transformedRemarks.filter(remark => !remark.is_own_remark);
+
+    // Remove the is_own_remark field from the final response
+    const cleanOwnRemarks = ownRemarks.map(({ is_own_remark, ...remark }) => remark);
+    const cleanOtherRemarks = otherRemarks.map(({ is_own_remark, ...remark }) => remark);
 
     res.json({
       success: true,
       message: 'Remarks retrieved successfully',
-      data: transformedRemarks
+      data: {
+        own_remarks: cleanOwnRemarks,
+        other_remarks: cleanOtherRemarks,
+        total_own_remarks: cleanOwnRemarks.length,
+        total_other_remarks: cleanOtherRemarks.length,
+        total_remarks: transformedRemarks.length
+      }
     });
   } catch (err) {
     console.error('Error retrieving remarks:', err);
