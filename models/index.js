@@ -16,6 +16,9 @@ import Admin from './Admin.js';
 User.hasMany(Remark, { foreignKey: 'user_id', as: 'remarks' });
 Remark.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+WorkOrder.hasMany(Remark, { foreignKey: 'work_order_id', as: 'remarks' });
+Remark.belongsTo(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
+
 User.hasMany(WorkOrder, { foreignKey: 'created_by', as: 'workOrders' });
 WorkOrder.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 

@@ -296,7 +296,7 @@ export const getUserProfile = async (req, res) => {
     const userId = req.user.id;
 
     const user = await User.findByPk(userId, {
-      attributes: ['id', 'name', 'phone', 'email', 'company_name', 'role', 'photo', 'created_at', 'state', 'district', 'taluka', 'village', 'warehouse_location', 'location']
+      attributes: ['id', 'name', 'phone', 'email', 'company_name', 'role', 'photo', 'createdAt', 'state', 'district', 'taluka', 'village', 'warehouse_location', 'location']
     });
 
     if (!user) {

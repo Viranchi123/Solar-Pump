@@ -26,6 +26,11 @@ const Remark = sequelize.define('Remark', {
   role_no: {
     type: DataTypes.STRING(50),
     allowNull: true
+  },
+  access: {
+    type: DataTypes.JSON,
+    allowNull: false,
+    comment: 'Access control: "everyone" or array of roles that can see this remark'
   }
 }, {
   tableName: 'remarks',
