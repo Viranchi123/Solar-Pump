@@ -360,6 +360,45 @@ export const updateUserPhoto = async (req, res) => {
   }
 };
 
+// Get User Profile Photo
+export const getUserProfilePhoto = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findByPk(userId, {
+      attributes: ['id', 'photo']
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.photo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profile photo not found'
+      });
+    }
+
+    // Set appropriate headers for image response
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Disposition', 'inline; filename="profile-photo.jpg"');
+    
+    // Send the image file
+    res.sendFile(user.photo, { root: '.' });
+
+  } catch (error) {
+    console.error('Get User Profile Photo Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 // Register User
 export const registerUser = async (req, res) => {
   try {

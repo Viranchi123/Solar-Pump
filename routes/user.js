@@ -7,6 +7,7 @@ import {
   getUserProfile,
   registerUser,
   updateUserPhoto,
+  getUserProfilePhoto,
   getRoleFields,
   getUsersByRole,
   loginWithGoogle
@@ -28,6 +29,7 @@ router.get('/role-users',getUsersByRole)
 
 // Protected routes (authentication required)
 router.get('/profile', authenticateToken, getUserProfile);
+router.get('/profile-photo', authenticateToken, getUserProfilePhoto);
 router.put('/update-photo', authenticateToken, generalPhotoUpload.single('photo'), updateUserPhoto);
 
 export default router;
