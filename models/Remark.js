@@ -31,6 +31,15 @@ const Remark = sequelize.define('Remark', {
     type: DataTypes.JSON,
     allowNull: false,
     comment: 'Access control: "everyone" or array of roles that can see this remark'
+  },
+  created_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    comment: 'User who created this remark - allows creator to see their own remarks'
   }
 }, {
   tableName: 'remarks',

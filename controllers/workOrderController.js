@@ -1130,3 +1130,420 @@ export const getRoleSummary = async (req, res) => {
     });
   }
 };
+
+// Get work orders by role with role-specific details
+export const getWorkOrdersByRole = async (req, res) => {
+  try {
+    const { 
+      role,
+      page = 1, 
+      limit = 10, 
+      status, 
+      search 
+    } = req.query;
+
+    // Validate role parameter
+    const validRoles = ['admin', 'factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection'];
+    if (!role || !validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid role parameter is required. Valid roles are: admin, factory, jsr, whouse, cp, contractor, farmer, inspection'
+      });
+    }
+
+    // Build where clause for work orders
+    const whereClause = {
+      status: {
+        [Op.ne]: 'cancelled'
+      }
+    };
+    
+    if (status) {
+      whereClause.status = status;
+    }
+    
+    if (search) {
+      whereClause[Op.or] = [
+        { work_order_number: { [Op.like]: `%${search}%` } },
+        { title: { [Op.like]: `%${search}%` } },
+        { region: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    // Calculate pagination
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get work orders with basic info
+    const { count, rows: workOrders } = await WorkOrder.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'creator',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset
+    });
+
+    // Get role-specific details for each work order
+    const workOrdersWithRoleDetails = await Promise.all(
+      workOrders.map(async (workOrder) => {
+        let roleDetails = null;
+        const workOrderId = workOrder.id;
+
+        try {
+          switch (role) {
+            case 'factory':
+              const factoryData = await WorkOrderFactory.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (factoryData) {
+                const totalUnits = workOrder.total_quantity;
+                const manufacturedUnits = factoryData.total_quantity_manufactured || 0;
+                const sentToJSR = factoryData.total_quantity_to_jsr || 0;
+                const remainingToManufacture = totalUnits - manufacturedUnits;
+                const remainingToSendToJSR = manufacturedUnits - sentToJSR;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_manufactured: manufacturedUnits,
+                  total_units_sent_to_jsr: sentToJSR,
+                  remaining_units_to_manufacture: remainingToManufacture,
+                  remaining_units_to_send_to_jsr: remainingToSendToJSR,
+                  factory_status: factoryData.factory_status,
+                  factory_notes: factoryData.factory_notes,
+                  created_at: factoryData.createdAt,
+                  updated_at: factoryData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_manufactured: 0,
+                  total_units_sent_to_jsr: 0,
+                  remaining_units_to_manufacture: workOrder.total_quantity,
+                  remaining_units_to_send_to_jsr: 0,
+                  factory_status: 'pending',
+                  factory_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'jsr':
+              const jsrData = await WorkOrderJSR.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (jsrData) {
+                const totalUnits = workOrder.total_quantity;
+                const receivedFromFactory = jsrData.total_quantity_received || 0;
+                const sentToWarehouse = jsrData.total_quantity_to_warehouse || 0;
+                const remainingToReceive = totalUnits - receivedFromFactory;
+                const remainingToSendToWarehouse = receivedFromFactory - sentToWarehouse;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_received_from_factory: receivedFromFactory,
+                  total_units_sent_to_warehouse: sentToWarehouse,
+                  remaining_units_to_receive: remainingToReceive,
+                  remaining_units_to_send_to_warehouse: remainingToSendToWarehouse,
+                  jsr_status: jsrData.jsr_status,
+                  jsr_notes: jsrData.jsr_notes,
+                  created_at: jsrData.createdAt,
+                  updated_at: jsrData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_received_from_factory: 0,
+                  total_units_sent_to_warehouse: 0,
+                  remaining_units_to_receive: workOrder.total_quantity,
+                  remaining_units_to_send_to_warehouse: 0,
+                  jsr_status: 'pending',
+                  jsr_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'whouse':
+              const warehouseData = await WorkOrderWarehouse.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (warehouseData) {
+                const totalUnits = workOrder.total_quantity;
+                const receivedFromJSR = warehouseData.total_quantity_in_warehouse || 0;
+                const sentToCP = warehouseData.total_quantity_to_cp || 0;
+                const remainingToReceive = totalUnits - receivedFromJSR;
+                const remainingToSendToCP = receivedFromJSR - sentToCP;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_received_from_jsr: receivedFromJSR,
+                  total_units_sent_to_cp: sentToCP,
+                  remaining_units_to_receive: remainingToReceive,
+                  remaining_units_to_send_to_cp: remainingToSendToCP,
+                  warehouse_status: warehouseData.warehouse_status,
+                  warehouse_notes: warehouseData.warehouse_notes,
+                  created_at: warehouseData.createdAt,
+                  updated_at: warehouseData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_received_from_jsr: 0,
+                  total_units_sent_to_cp: 0,
+                  remaining_units_to_receive: workOrder.total_quantity,
+                  remaining_units_to_send_to_cp: 0,
+                  warehouse_status: 'pending',
+                  warehouse_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'cp':
+              const cpData = await WorkOrderCP.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (cpData) {
+                const totalUnits = workOrder.total_quantity;
+                const receivedFromWarehouse = cpData.total_quantity_to_cp || 0;
+                const assignedToContractor = cpData.total_quantity_assigned || 0;
+                const remainingToReceive = totalUnits - receivedFromWarehouse;
+                const remainingToAssign = receivedFromWarehouse - assignedToContractor;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_received_from_warehouse: receivedFromWarehouse,
+                  total_units_assigned_to_contractor: assignedToContractor,
+                  remaining_units_to_receive: remainingToReceive,
+                  remaining_units_to_assign: remainingToAssign,
+                  cp_status: cpData.cp_status,
+                  cp_notes: cpData.cp_notes,
+                  created_at: cpData.createdAt,
+                  updated_at: cpData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_received_from_warehouse: 0,
+                  total_units_assigned_to_contractor: 0,
+                  remaining_units_to_receive: workOrder.total_quantity,
+                  remaining_units_to_assign: 0,
+                  cp_status: 'pending',
+                  cp_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'contractor':
+              const contractorData = await WorkOrderContractor.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (contractorData) {
+                const totalUnits = workOrder.total_quantity;
+                const receivedFromCP = contractorData.total_quantity_to_contractor || 0;
+                const assignedToFarmer = contractorData.total_quantity_assigned || 0;
+                const remainingToReceive = totalUnits - receivedFromCP;
+                const remainingToAssign = receivedFromCP - assignedToFarmer;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_received_from_cp: receivedFromCP,
+                  total_units_assigned_to_farmer: assignedToFarmer,
+                  remaining_units_to_receive: remainingToReceive,
+                  remaining_units_to_assign: remainingToAssign,
+                  contractor_status: contractorData.contractor_status,
+                  contractor_notes: contractorData.contractor_notes,
+                  created_at: contractorData.createdAt,
+                  updated_at: contractorData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_received_from_cp: 0,
+                  total_units_assigned_to_farmer: 0,
+                  remaining_units_to_receive: workOrder.total_quantity,
+                  remaining_units_to_assign: 0,
+                  contractor_status: 'pending',
+                  contractor_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'farmer':
+              const farmerData = await WorkOrderFarmer.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (farmerData) {
+                const totalUnits = workOrder.total_quantity;
+                const receivedFromContractor = farmerData.total_quantity_received || 0;
+                const remainingToReceive = totalUnits - receivedFromContractor;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_received_from_contractor: receivedFromContractor,
+                  remaining_units_to_receive: remainingToReceive,
+                  farmer_status: farmerData.farmer_status,
+                  farmer_notes: farmerData.farmer_notes,
+                  created_at: farmerData.createdAt,
+                  updated_at: farmerData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_received_from_contractor: 0,
+                  remaining_units_to_receive: workOrder.total_quantity,
+                  farmer_status: 'pending',
+                  farmer_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'inspection':
+              const inspectionData = await WorkOrderInspection.findOne({
+                where: { work_order_id: workOrderId }
+              });
+              if (inspectionData) {
+                const totalUnits = workOrder.total_quantity;
+                const receivedForInspection = inspectionData.total_quantity_for_inspection || 0;
+                const remainingToReceive = totalUnits - receivedForInspection;
+                
+                roleDetails = {
+                  total_units: totalUnits,
+                  total_units_received_for_inspection: receivedForInspection,
+                  remaining_units_to_receive: remainingToReceive,
+                  inspection_status: inspectionData.inspection_status,
+                  inspection_notes: inspectionData.inspection_notes,
+                  created_at: inspectionData.createdAt,
+                  updated_at: inspectionData.updatedAt
+                };
+              } else {
+                roleDetails = {
+                  total_units: workOrder.total_quantity,
+                  total_units_received_for_inspection: 0,
+                  remaining_units_to_receive: workOrder.total_quantity,
+                  inspection_status: 'pending',
+                  inspection_notes: null,
+                  created_at: null,
+                  updated_at: null
+                };
+              }
+              break;
+
+            case 'admin':
+              // For admin, show work order creation details
+              roleDetails = {
+                total_units: workOrder.total_quantity,
+                work_order_created: true,
+                created_by: workOrder.created_by,
+                created_at: workOrder.createdAt,
+                updated_at: workOrder.updatedAt
+              };
+              break;
+          }
+        } catch (error) {
+          console.error(`Error fetching ${role} details for work order ${workOrderId}:`, error);
+          roleDetails = null;
+        }
+
+        // Get role-specific timeline
+        let roleTimeline = null;
+        switch (role) {
+          case 'factory':
+            roleTimeline = workOrder.factory_timeline;
+            break;
+          case 'jsr':
+            roleTimeline = workOrder.jsr_timeline;
+            break;
+          case 'whouse':
+            roleTimeline = workOrder.whouse_timeline;
+            break;
+          case 'cp':
+            roleTimeline = workOrder.cp_timeline;
+            break;
+          case 'contractor':
+            roleTimeline = workOrder.contractor_timeline;
+            break;
+          case 'farmer':
+            roleTimeline = workOrder.farmer_timeline;
+            break;
+          case 'inspection':
+            roleTimeline = workOrder.inspection_timeline;
+            break;
+          case 'admin':
+            roleTimeline = null; // Admin doesn't have a specific timeline
+            break;
+        }
+
+        return {
+          id: workOrder.id,
+          work_order_number: workOrder.work_order_number,
+          title: workOrder.title,
+          region: workOrder.region,
+          total_quantity: workOrder.total_quantity,
+          hp_3_quantity: workOrder.hp_3_quantity,
+          hp_5_quantity: workOrder.hp_5_quantity,
+          hp_7_5_quantity: workOrder.hp_7_5_quantity,
+          start_date: workOrder.start_date,
+          status: workOrder.status,
+          current_stage: workOrder.current_stage,
+          // Role-specific timeline
+          timeline: roleTimeline,
+          created_by: {
+            id: workOrder.creator?.id,
+            name: workOrder.creator?.name,
+            email: workOrder.creator?.email,
+            role: workOrder.creator?.role
+          },
+          // Role-specific details
+          [role + '_details']: roleDetails,
+          createdAt: workOrder.createdAt,
+          updatedAt: workOrder.updatedAt
+        };
+      })
+    );
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(count / parseInt(limit));
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      message: `Work orders with ${role} details retrieved successfully`,
+      data: {
+        role,
+        workOrders: workOrdersWithRoleDetails,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: count,
+          itemsPerPage: parseInt(limit),
+          hasNextPage,
+          hasPrevPage
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error retrieving work orders by role:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};

@@ -1,6 +1,122 @@
 import WorkOrderStage from '../models/WorkOrderStage.js';
 import WorkOrder from '../models/WorkOrder.js';
 import WorkOrderFactory from '../models/WorkOrderFactory.js';
+import WorkOrderJSR from '../models/WorkOrderJSR.js';
+import WorkOrderWarehouse from '../models/WorkOrderWarehouse.js';
+import WorkOrderCP from '../models/WorkOrderCP.js';
+import WorkOrderContractor from '../models/WorkOrderContractor.js';
+import WorkOrderFarmer from '../models/WorkOrderFarmer.js';
+
+// Helper function to get HP details for each stage
+const getStageHPDetails = (stageName, stageStatus, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails) => {
+  const totalQuantity = workOrder.total_quantity;
+  const hp3Total = workOrder.hp_3_quantity;
+  const hp5Total = workOrder.hp_5_quantity;
+  const hp7_5Total = workOrder.hp_7_5_quantity;
+
+  // Helper function to get done values based on stage status
+  const getDoneValues = (totalDone, hp3Done, hp5Done, hp7_5Done) => {
+    if (stageStatus === 'completed') {
+      return {
+        total: { done: totalDone, total: totalQuantity },
+        hp_3: { done: hp3Done, total: hp3Total },
+        hp_5: { done: hp5Done, total: hp5Total },
+        hp_7_5: { done: hp7_5Done, total: hp7_5Total }
+      };
+    } else {
+      // For pending or in_progress stages, show 0 done
+      return {
+        total: { done: 0, total: totalQuantity },
+        hp_3: { done: 0, total: hp3Total },
+        hp_5: { done: 0, total: hp5Total },
+        hp_7_5: { done: 0, total: hp7_5Total }
+      };
+    }
+  };
+
+  switch (stageName.toLowerCase()) {
+    case 'admin_created':
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'factory':
+      if (factoryDetails) {
+        return getDoneValues(
+          factoryDetails.total_quantity_manufactured || 0,
+          factoryDetails.hp_3_manufactured || 0,
+          factoryDetails.hp_5_manufactured || 0,
+          factoryDetails.hp_7_5_manufactured || 0
+        );
+      }
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'jsr':
+      if (jsrDetails) {
+        // JSR stage shows what was received and verified
+        return getDoneValues(
+          jsrDetails.total_quantity_received || 0,
+          jsrDetails.hp_3_received || 0,
+          jsrDetails.hp_5_received || 0,
+          jsrDetails.hp_7_5_received || 0
+        );
+      }
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'whouse':
+      if (warehouseDetails) {
+        // Warehouse stage shows what was received in warehouse
+        return getDoneValues(
+          warehouseDetails.total_quantity_in_warehouse || 0,
+          warehouseDetails.hp_3_in_warehouse || 0,
+          warehouseDetails.hp_5_in_warehouse || 0,
+          warehouseDetails.hp_7_5_in_warehouse || 0
+        );
+      }
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'cp':
+      if (cpDetails) {
+        // CP stage shows what was forwarded by CP
+        return getDoneValues(
+          cpDetails.total_quantity_to_cp || 0,
+          cpDetails.hp_3_forwarded_by_cp || 0,
+          cpDetails.hp_5_forwarded_by_cp || 0,
+          cpDetails.hp_7_5_forwarded_by_cp || 0
+        );
+      }
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'contractor':
+      if (contractorDetails) {
+        // Contractor stage shows what was forwarded by contractor
+        return getDoneValues(
+          contractorDetails.total_quantity_to_contractor || 0,
+          contractorDetails.hp_3_forwarded_by_contractor || 0,
+          contractorDetails.hp_5_forwarded_by_contractor || 0,
+          contractorDetails.hp_7_5_forwarded_by_contractor || 0
+        );
+      }
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'farmer':
+      if (farmerDetails) {
+        // Farmer stage shows what was received by farmer
+        return getDoneValues(
+          farmerDetails.total_quantity_received || 0,
+          farmerDetails.hp_3_received || 0,
+          farmerDetails.hp_5_received || 0,
+          farmerDetails.hp_7_5_received || 0
+        );
+      }
+      return getDoneValues(0, 0, 0, 0);
+
+    case 'inspection':
+      // Inspection stage doesn't have HP tracking, show 0
+      return getDoneValues(0, 0, 0, 0);
+
+    default:
+      return getDoneValues(0, 0, 0, 0);
+  }
+};
 
 // Get current stage of a work order
 export const getCurrentStage = async (req, res) => {
@@ -16,8 +132,28 @@ export const getCurrentStage = async (req, res) => {
       });
     }
 
-    // Get factory details to check remaining units
+    // Get all stage details for HP tracking
     const factoryDetails = await WorkOrderFactory.findOne({
+      where: { work_order_id }
+    });
+
+    const jsrDetails = await WorkOrderJSR.findOne({
+      where: { work_order_id }
+    });
+
+    const warehouseDetails = await WorkOrderWarehouse.findOne({
+      where: { work_order_id }
+    });
+
+    const cpDetails = await WorkOrderCP.findOne({
+      where: { work_order_id }
+    });
+
+    const contractorDetails = await WorkOrderContractor.findOne({
+      where: { work_order_id }
+    });
+
+    const farmerDetails = await WorkOrderFarmer.findOne({
       where: { work_order_id }
     });
 
@@ -77,7 +213,8 @@ export const getCurrentStage = async (req, res) => {
         status: currentStage.status,
         started_at: currentStage.started_at,
         assigned_to: currentStage.assigned_to,
-        notes: currentStage.notes
+        notes: currentStage.notes,
+        hp_details: getStageHPDetails(currentStage.stage_name, currentStage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
       } : null,
       current_active_stages: currentStages.map(stage => ({
         stage_name: stage.stage_name,
@@ -85,24 +222,38 @@ export const getCurrentStage = async (req, res) => {
         status: stage.status,
         started_at: stage.started_at,
         assigned_to: stage.assigned_to,
-        notes: stage.notes
+        notes: stage.notes,
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
       })),
       next_pending_stage: nextPendingStage ? {
         stage_name: nextPendingStage.stage_name,
         stage_order: nextPendingStage.stage_order,
-        status: nextPendingStage.status
+        status: nextPendingStage.status,
+        hp_details: getStageHPDetails(nextPendingStage.stage_name, nextPendingStage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
       } : null,
       completed_stages: completedStages.map(stage => ({
         stage_name: stage.stage_name,
         stage_order: stage.stage_order,
         completed_at: stage.completed_at,
-        assigned_to: stage.assigned_to
+        assigned_to: stage.assigned_to,
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
       })),
       failed_stages: failedStages.map(stage => ({
         stage_name: stage.stage_name,
         stage_order: stage.stage_order,
         error_message: stage.error_message,
-        retry_count: stage.retry_count
+        retry_count: stage.retry_count,
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+      })),
+      all_stages: allStages.map(stage => ({
+        stage_name: stage.stage_name,
+        stage_order: stage.stage_order,
+        status: stage.status,
+        started_at: stage.started_at,
+        completed_at: stage.completed_at,
+        assigned_to: stage.assigned_to,
+        notes: stage.notes,
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
       })),
       total_stages: allStages.length,
       completed_count: completedStages.length,

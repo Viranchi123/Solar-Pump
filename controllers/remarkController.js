@@ -65,7 +65,8 @@ export const addRemark = async (req, res) => {
       user_id,
       remark: remark.trim(),
       role_no: null,
-      access: access
+      access: access,
+      created_by: user_id
     });
 
     res.status(201).json({ 
@@ -224,13 +225,18 @@ export const listRemarks = async (req, res) => {
           attributes: ['work_order_number']
         }
       ],
-      attributes: ['id', 'remark', 'created_at', 'updated_at', 'work_order_id', 'access'],
+      attributes: ['id', 'remark', 'created_at', 'updated_at', 'work_order_id', 'access', 'created_by'],
       order: [['created_at', 'DESC']]
     });
 
     // Filter remarks based on access control
     const accessibleRemarks = remarks.filter(remark => {
       const access = remark.access;
+      
+      // If user created this remark, they can always see it
+      if (remark.created_by === req.user.id) {
+        return true;
+      }
       
       // If access is "everyone", all users can see it
       if (access === 'everyone') {
