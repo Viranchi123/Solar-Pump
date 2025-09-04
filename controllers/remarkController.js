@@ -1,7 +1,16 @@
-import { Remark, User } from '../models/index.js';
+import { Remark, User, WorkOrder } from '../models/index.js';
 
 export const addRemark = async (req, res) => {
   const { work_order_id, remark, role_no } = req.body;
+  
+  // Check if user is authenticated
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ 
+      success: false,
+      message: 'Authentication required' 
+    });
+  }
+  
   const user_id = req.user.id;
 
   if (!work_order_id || !Number.isInteger(work_order_id)) {
@@ -13,6 +22,15 @@ export const addRemark = async (req, res) => {
   }
 
   try {
+    // Check if work order exists
+    const workOrder = await WorkOrder.findByPk(work_order_id);
+    if (!workOrder) {
+      return res.status(404).json({ 
+        success: false,
+        message: `Work order with ID ${work_order_id} not found` 
+      });
+    }
+
     const newRemark = await Remark.create({
       work_order_id,
       user_id,
@@ -20,15 +38,31 @@ export const addRemark = async (req, res) => {
       role_no: role_no || null
     });
 
-    res.status(201).json({ message: 'Remark added', remark_id: newRemark.id });
+    res.status(201).json({ 
+      success: true,
+      message: 'Remark added successfully', 
+      remark_id: newRemark.id 
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error adding remark:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
   }
 };
 
 export const editRemark = async (req, res) => {
   const { remark_id, remark } = req.body;
+  
+  // Check if user is authenticated
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ 
+      success: false,
+      message: 'Authentication required' 
+    });
+  }
+  
   const user_id = req.user.id;
 
   if (!remark_id || !Number.isInteger(remark_id)) {
@@ -43,26 +77,46 @@ export const editRemark = async (req, res) => {
     const existingRemark = await Remark.findByPk(remark_id);
     
     if (!existingRemark) {
-      return res.status(404).json({ message: 'Remark not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Remark not found' 
+      });
     }
 
     if (existingRemark.user_id !== user_id) {
-      return res.status(403).json({ message: 'Not authorized to edit this remark' });
+      return res.status(403).json({ 
+        success: false,
+        message: 'Not authorized to edit this remark' 
+      });
     }
 
     await existingRemark.update({
       remark: remark.trim()
     });
 
-    res.json({ message: 'Remark updated' });
+    res.json({ 
+      success: true,
+      message: 'Remark updated successfully' 
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error updating remark:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
   }
 };
 
 export const listRemarks = async (req, res) => {
   const { work_order_id, remark_id } = req.query;
+  
+  // Check if user is authenticated
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ 
+      success: false,
+      message: 'Authentication required' 
+    });
+  }
 
   try {
     let whereClause = {};
@@ -75,6 +129,14 @@ export const listRemarks = async (req, res) => {
     if (remark_id) {
       whereClause.id = remark_id;
     } else if (work_order_id) {
+      // Check if work order exists when filtering by work_order_id
+      const workOrder = await WorkOrder.findByPk(work_order_id);
+      if (!workOrder) {
+        return res.status(404).json({ 
+          success: false,
+          message: `Work order with ID ${work_order_id} not found` 
+        });
+      }
       whereClause.work_order_id = work_order_id;
     }
 
@@ -96,10 +158,17 @@ export const listRemarks = async (req, res) => {
       role: remark.user.role
     }));
 
-    res.json(transformedRemarks);
+    res.json({
+      success: true,
+      message: 'Remarks retrieved successfully',
+      data: transformedRemarks
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error retrieving remarks:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
   }
 };
 

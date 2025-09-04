@@ -5,7 +5,7 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 
 // All routes require authentication
-// router.use(authenticateToken);
+router.use(authenticateToken);
 
 // Add a new remark
 router.post('/add', addRemark);
