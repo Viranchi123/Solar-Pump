@@ -40,6 +40,12 @@ const Remark = sequelize.define('Remark', {
       key: 'id'
     },
     comment: 'User who created this remark - allows creator to see their own remarks'
+  },
+  uploaded_by_admin: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    comment: 'Whether this remark was uploaded by an admin (true) or regular user (false)'
   }
 }, {
   tableName: 'remarks',

@@ -2,6 +2,35 @@ import Admin from '../models/Admin.js';
 import jwt from 'jsonwebtoken';
 import { google } from 'googleapis';
 import { Op } from 'sequelize';
+import nodemailer from 'nodemailer';
+
+// Email transporter configuration
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+// Generate OTP
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+// Send OTP via email
+const sendOTPEmail = async (email, otp, subject, text) => {
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject,
+      text
+    });
+    return true;
+  } catch (error) {
+    console.error('Email sending error:', error);
+    return false;
+  }
+};
 
 // Register admin
 export const registerAdmin = async (req, res) => {
@@ -60,13 +89,20 @@ export const registerAdmin = async (req, res) => {
     }
 
     // Create new admin
-    const admin = await Admin.create({
+    const adminData = {
       full_name,
       email,
       password,
       company_name,
       role: 'admin'
-    });
+    };
+
+    // Add photo if uploaded
+    if (req.file) {
+      adminData.photo = req.file.path;
+    }
+
+    const admin = await Admin.create(adminData);
 
     // Generate JWT token
     const token = jwt.sign(
@@ -88,6 +124,7 @@ export const registerAdmin = async (req, res) => {
         email: admin.email,
         company_name: admin.company_name,
         role: admin.role,
+        photo: admin.photo,
         token
       }
     });
@@ -178,6 +215,7 @@ export const loginAdmin = async (req, res) => {
         email: admin.email,
         company_name: admin.company_name,
         role: admin.role,
+        photo: admin.photo,
         last_login: admin.last_login,
         token
       }
@@ -218,6 +256,7 @@ export const getAdminProfile = async (req, res) => {
         email: admin.email,
         company_name: admin.company_name,
         role: admin.role,
+        photo: admin.photo,
         is_active: admin.is_active,
         last_login: admin.last_login,
         createdAt: admin.createdAt,
@@ -273,6 +312,7 @@ export const updateAdminProfile = async (req, res) => {
         email: admin.email,
         company_name: admin.company_name,
         role: admin.role,
+        photo: admin.photo,
         is_active: admin.is_active,
         last_login: admin.last_login,
         updatedAt: admin.updatedAt
@@ -384,6 +424,7 @@ export const loginAdminWithGoogle = async (req, res) => {
         email: admin.email,
         company_name: admin.company_name,
         role: admin.role,
+        photo: admin.photo,
         last_login: admin.last_login,
         auth_method: admin.auth_method,
         token
@@ -396,6 +437,262 @@ export const loginAdminWithGoogle = async (req, res) => {
       success: false,
       message: 'Internal server error',
       error: error.message
+    });
+  }
+};
+
+// Update Admin Photo
+export const updateAdminPhoto = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload an image file'
+      });
+    }
+
+    // Get admin
+    const admin = await Admin.findByPk(adminId);
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    // Update photo path
+    const photoPath = req.file.path;
+    await admin.update({ photo: photoPath });
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile photo updated successfully',
+      photo: photoPath
+    });
+
+  } catch (error) {
+    console.error('Update Admin Photo Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Get Admin Profile Photo
+export const getAdminProfilePhoto = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+
+    const admin = await Admin.findByPk(adminId, {
+      attributes: ['id', 'photo']
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    if (!admin.photo) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profile photo not found'
+      });
+    }
+
+    // Set appropriate headers for image response
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Disposition', 'inline; filename="profile-photo.jpg"');
+    
+    // Send the image file
+    res.sendFile(admin.photo, { root: '.' });
+
+  } catch (error) {
+    console.error('Get Admin Profile Photo Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Send Forgot Password OTP
+export const sendForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Find admin by email
+    const admin = await Admin.findOne({ where: { email } });
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found with this email'
+      });
+    }
+
+    // Generate OTP and set expiry (10 minutes)
+    const otp = generateOTP();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Update admin with OTP
+    await admin.update({
+      otp,
+      otp_expiry: otpExpiry
+    });
+
+    // Send OTP via email
+    const emailSent = await sendOTPEmail(
+      email,
+      otp,
+      'Password Reset OTP',
+      `Your password reset OTP is: ${otp}. It is valid for 10 minutes.`
+    );
+
+    if (!emailSent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP email'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent to your email successfully'
+    });
+
+  } catch (error) {
+    console.error('Send Forgot Password OTP Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Verify Forgot Password OTP (Step 2)
+export const verifyForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and OTP are required'
+      });
+    }
+
+    // Find admin by email
+    const admin = await Admin.findOne({ where: { email } });
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    // Check if OTP matches
+    if (admin.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP'
+      });
+    }
+
+    // Check if OTP is expired
+    if (admin.isOTPExpired()) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired. Please request a new one.'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP verified successfully',
+      email: email
+    });
+
+  } catch (error) {
+    console.error('Verify Forgot Password OTP Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+// Reset Password (Step 3 - after OTP verification)
+export const resetPassword = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, OTP, and new password are required'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    // Find admin by email
+    const admin = await Admin.findOne({ where: { email } });
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    // Check if OTP matches
+    if (admin.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP'
+      });
+    }
+
+    // Check if OTP is expired
+    if (admin.isOTPExpired()) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired. Please request a new one.'
+      });
+    }
+
+    // Update password and clear OTP
+    await admin.update({
+      password: newPassword,
+      otp: null,
+      otp_expiry: null
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+
+  } catch (error) {
+    console.error('Reset Password Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 };

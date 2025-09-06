@@ -1,4 +1,4 @@
-import { Remark, User, WorkOrder } from '../models/index.js';
+import { Remark, User, WorkOrder, Admin } from '../models/index.js';
 
 export const addRemark = async (req, res) => {
   const { work_order_id, remark, access } = req.body;
@@ -57,8 +57,9 @@ export const addRemark = async (req, res) => {
       });
     }
 
-    // Get user details
-    const user = await User.findByPk(user_id);
+    // Use the isAdmin flag from the authentication middleware
+    // This is already correctly set based on whether the user was found in Admin table
+    const isAdmin = req.user.isAdmin;
 
     const newRemark = await Remark.create({
       work_order_id,
@@ -66,7 +67,8 @@ export const addRemark = async (req, res) => {
       remark: remark.trim(),
       role_no: null,
       access: access,
-      created_by: user_id
+      created_by: user_id,
+      uploaded_by_admin: isAdmin
     });
 
     res.status(201).json({ 
@@ -75,7 +77,8 @@ export const addRemark = async (req, res) => {
       data: {
         remark_id: newRemark.id,
         work_order_number: workOrder.work_order_number,
-        user_role: user.role
+        user_role: req.user.role,
+        uploaded_by_admin: isAdmin
       }
     });
   } catch (err) {
@@ -225,7 +228,7 @@ export const listRemarks = async (req, res) => {
           attributes: ['work_order_number']
         }
       ],
-      attributes: ['id', 'remark', 'created_at', 'updated_at', 'work_order_id', 'access', 'created_by'],
+      attributes: ['id', 'remark', 'created_at', 'updated_at', 'work_order_id', 'access', 'created_by', 'uploaded_by_admin'],
       order: [['created_at', 'DESC']]
     });
 
@@ -263,6 +266,7 @@ export const listRemarks = async (req, res) => {
       user_name: remark.user.name,
       user_role: remark.user.role,
       access: remark.access,
+      uploaded_by_admin: remark.uploaded_by_admin,
       is_own_remark: remark.created_by === req.user.id
     }));
 
@@ -287,6 +291,92 @@ export const listRemarks = async (req, res) => {
     });
   } catch (err) {
     console.error('Error retrieving remarks:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
+  }
+};
+
+// Get remarks separated by admin-created (sent) and user-created (received)
+export const getRemarksByAdminStatus = async (req, res) => {
+  const { work_order_id, remark_id } = req.query;
+  
+  // Check if user is authenticated
+  if (!req.user || !req.user.id) {
+    return res.status(401).json({ 
+      success: false,
+      message: 'Authentication required' 
+    });
+  }
+
+  try {
+    let whereClause = {};
+
+    if (remark_id) {
+      whereClause.id = remark_id;
+    } else if (work_order_id) {
+      // Check if work order exists when filtering by work_order_id
+      const workOrder = await WorkOrder.findByPk(work_order_id);
+      if (!workOrder) {
+        return res.status(404).json({ 
+          success: false,
+          message: `Work order with ID ${work_order_id} not found` 
+        });
+      }
+      whereClause.work_order_id = work_order_id;
+    }
+
+    const remarks = await Remark.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['name', 'role']
+        },
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          attributes: ['work_order_number']
+        }
+      ],
+      attributes: ['id', 'remark', 'created_at', 'updated_at', 'work_order_id', 'access', 'created_by', 'uploaded_by_admin'],
+      order: [['created_at', 'DESC']]
+    });
+
+    // Transform the data to match the expected format (no access control filtering - show all remarks)
+    const transformedRemarks = remarks.map(remark => ({
+      id: remark.id,
+      remark: remark.remark,
+      created_at: remark.created_at,
+      updated_at: remark.updated_at,
+      work_order_id: remark.work_order_id,
+      work_order_number: remark.workOrder?.work_order_number,
+      user_name: remark.user.name,
+      user_role: remark.user.role,
+      access: remark.access,
+      uploaded_by_admin: remark.uploaded_by_admin,
+      is_own_remark: remark.created_by === req.user.id
+    }));
+
+    // Separate remarks into sent (admin-created) and received (user-created)
+    const sentRemarks = transformedRemarks.filter(remark => remark.uploaded_by_admin);
+    const receivedRemarks = transformedRemarks.filter(remark => !remark.uploaded_by_admin);
+
+    res.json({
+      success: true,
+      message: 'Remarks retrieved successfully',
+      data: {
+        sent: sentRemarks,
+        received: receivedRemarks,
+        total_sent: sentRemarks.length,
+        total_received: receivedRemarks.length,
+        total_remarks: transformedRemarks.length
+      }
+    });
+  } catch (err) {
+    console.error('Error retrieving remarks by admin status:', err);
     res.status(500).json({ 
       success: false,
       message: 'Internal server error' 

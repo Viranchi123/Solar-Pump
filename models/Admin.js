@@ -59,6 +59,21 @@ const Admin = sequelize.define('Admin', {
     type: DataTypes.DATE,
     allowNull: true,
     comment: 'Last login timestamp'
+  },
+  photo: {
+    type: DataTypes.STRING(500),
+    allowNull: true,
+    comment: 'Profile photo path'
+  },
+  otp: {
+    type: DataTypes.STRING(6),
+    allowNull: true,
+    comment: 'OTP for password reset'
+  },
+  otp_expiry: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'OTP expiry timestamp'
   }
 }, {
   tableName: 'admins',
@@ -80,6 +95,12 @@ const Admin = sequelize.define('Admin', {
 // Instance method to compare password
 Admin.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Instance method to check if OTP is expired
+Admin.prototype.isOTPExpired = function() {
+  if (!this.otp_expiry) return true;
+  return new Date() > this.otp_expiry;
 };
 
 export default Admin;

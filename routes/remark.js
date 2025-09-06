@@ -1,5 +1,5 @@
 import express from 'express';
-import { addRemark, editRemark, listRemarks } from '../controllers/remarkController.js';
+import { addRemark, editRemark, listRemarks, getRemarksByAdminStatus } from '../controllers/remarkController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -15,6 +15,9 @@ router.put('/edit', editRemark);
 
 // List remarks (with optional filters)
 router.get('/list', listRemarks);
+
+// Get remarks separated by admin status (sent/received)
+router.get('/admin-status', getRemarksByAdminStatus);
 
 export default router;
 

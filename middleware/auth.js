@@ -16,13 +16,18 @@ export const authenticateToken = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // Check if user exists in either User or Admin table
-    let user = await User.findByPk(decoded.id);
+    // Check if user exists in either User or Admin table based on role in token
+    let user;
     let isAdmin = false;
     
-    if (!user) {
+    if (decoded.role === 'admin') {
+      // This is an admin token, look in Admin table
       user = await Admin.findByPk(decoded.id);
       isAdmin = true;
+    } else {
+      // This is a regular user token, look in User table
+      user = await User.findByPk(decoded.id);
+      isAdmin = false;
     }
     
     if (!user) {
@@ -43,7 +48,7 @@ export const authenticateToken = async (req, res, next) => {
     // Add user info to request
     req.user = {
       id: user.id,
-      role: user.role,
+      role: decoded.role, // Use role from token
       phone: user.phone || null,
       email: user.email,
       isAdmin
