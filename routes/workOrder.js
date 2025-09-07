@@ -1,5 +1,5 @@
 import express from 'express';
-import { createWorkOrder, getWorkOrdersWithApprovalStatus, getWorkOrderWithApprovalStatus, getAllWorkOrders, getDashboardSummary, getRoleSummary, getWorkOrdersByRole } from '../controllers/workOrderController.js';
+import { createWorkOrder, getWorkOrdersWithApprovalStatus, getWorkOrderWithApprovalStatus, getAllWorkOrders, getDashboardSummary, getRoleSummary, getWorkOrdersByRole, deleteWorkOrder } from '../controllers/workOrderController.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { farmerListUpload, handleMulterError } from '../config/multer.js';
 
@@ -28,5 +28,8 @@ router.get('/summary', getRoleSummary);
 
 // Get work orders by role with role-specific details
 router.get('/by-role', authenticateToken, getWorkOrdersByRole);
+
+// Delete work order (Admin only)
+router.delete('/:id', authenticateToken, deleteWorkOrder);
 
 export default router;

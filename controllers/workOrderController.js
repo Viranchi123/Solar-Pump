@@ -296,6 +296,18 @@ export const getWorkOrdersWithApprovalStatus = async (req, res) => {
           as: 'inspectionApprover',
           attributes: ['id', 'name', 'email', 'role'],
           required: false
+        },
+        {
+          model: WorkOrderFarmer,
+          as: 'farmerDetails',
+          attributes: ['id', 'photo_1', 'photo_2', 'photo_3', 'issue_title', 'description', 'farmer_status'],
+          required: false
+        },
+        {
+          model: WorkOrderJSR,
+          as: 'jsrDetails',
+          attributes: ['id', 'farmer_name', 'village', 'installation_site_photo', 'lineman_installation_set_photo', 'set_close_up_photo'],
+          required: false
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -358,6 +370,33 @@ export const getWorkOrdersWithApprovalStatus = async (req, res) => {
           contractor_timeline: wo.contractor_timeline,
           farmer_timeline: wo.farmer_timeline,
           inspection_timeline: wo.inspection_timeline,
+          // Farmer defect details (for approved status)
+          farmer_defect_details: wo.farmerDetails ? {
+            issue_title: wo.farmerDetails.issue_title,
+            description: wo.farmerDetails.description,
+            farmer_status: wo.farmerDetails.farmer_status,
+            defect_photos: {
+              photo_1: wo.farmerDetails.photo_1 ? `/uploads/farmer-photos/${wo.farmerDetails.photo_1}` : null,
+              photo_2: wo.farmerDetails.photo_2 ? `/uploads/farmer-photos/${wo.farmerDetails.photo_2}` : null,
+              photo_3: wo.farmerDetails.photo_3 ? `/uploads/farmer-photos/${wo.farmerDetails.photo_3}` : null
+            }
+          } : null,
+          // JSR installation photos (for approved status)
+          jsr_installation_photos: wo.jsrDetails ? {
+            farmer_name: wo.jsrDetails.farmer_name,
+            village: wo.jsrDetails.village,
+            installation_site_photo: wo.jsrDetails.installation_site_photo ? `/uploads/jsr-photos/${wo.jsrDetails.installation_site_photo}` : null,
+            lineman_installation_set_photo: wo.jsrDetails.lineman_installation_set_photo ? `/uploads/jsr-photos/${wo.jsrDetails.lineman_installation_set_photo}` : null,
+            set_close_up_photo: wo.jsrDetails.set_close_up_photo ? `/uploads/jsr-photos/${wo.jsrDetails.set_close_up_photo}` : null
+          } : null,
+          // Farmer details for rejected status
+          farmer_details: wo.jsrDetails ? {
+            farmer_name: wo.jsrDetails.farmer_name,
+            village: wo.jsrDetails.village,
+            district: wo.jsrDetails.district,
+            taluka: wo.jsrDetails.taluka,
+            state: wo.jsrDetails.state
+          } : null,
           createdAt: wo.createdAt,
           updatedAt: wo.updatedAt
         })),
@@ -404,6 +443,18 @@ export const getWorkOrderWithApprovalStatus = async (req, res) => {
           model: User,
           as: 'inspectionApprover',
           attributes: ['id', 'name', 'email', 'role'],
+          required: false
+        },
+        {
+          model: WorkOrderFarmer,
+          as: 'farmerDetails',
+          attributes: ['id', 'farmer_name', 'village', 'city', 'installation_photo', 'lineman_photo', 'installation_set_close_photo'],
+          required: false
+        },
+        {
+          model: WorkOrderJSR,
+          as: 'jsrDetails',
+          attributes: ['id', 'farmer_name', 'village', 'installation_site_photo', 'lineman_installation_set_photo', 'set_close_up_photo'],
           required: false
         }
       ]
@@ -467,6 +518,23 @@ export const getWorkOrderWithApprovalStatus = async (req, res) => {
         inspection_timeline: workOrder.inspection_timeline,
         farmer_list_file: workOrder.farmer_list_file,
         farmer_list_original_name: workOrder.farmer_list_original_name,
+        // Farmer details (for approved status)
+        farmer_details: workOrder.farmerDetails ? {
+          farmer_name: workOrder.farmerDetails.farmer_name,
+          village: workOrder.farmerDetails.village,
+          city: workOrder.farmerDetails.city,
+          installation_photo: workOrder.farmerDetails.installation_photo ? `/uploads/farmer-photos/${workOrder.farmerDetails.installation_photo}` : null,
+          lineman_photo: workOrder.farmerDetails.lineman_photo ? `/uploads/farmer-photos/${workOrder.farmerDetails.lineman_photo}` : null,
+          installation_set_close_photo: workOrder.farmerDetails.installation_set_close_photo ? `/uploads/farmer-photos/${workOrder.farmerDetails.installation_set_close_photo}` : null
+        } : null,
+        // JSR installation photos (for approved status)
+        jsr_installation_photos: workOrder.jsrDetails ? {
+          farmer_name: workOrder.jsrDetails.farmer_name,
+          village: workOrder.jsrDetails.village,
+          installation_site_photo: workOrder.jsrDetails.installation_site_photo ? `/uploads/jsr-photos/${workOrder.jsrDetails.installation_site_photo}` : null,
+          lineman_installation_set_photo: workOrder.jsrDetails.lineman_installation_set_photo ? `/uploads/jsr-photos/${workOrder.jsrDetails.lineman_installation_set_photo}` : null,
+          set_close_up_photo: workOrder.jsrDetails.set_close_up_photo ? `/uploads/jsr-photos/${workOrder.jsrDetails.set_close_up_photo}` : null
+        } : null,
         createdAt: workOrder.createdAt,
         updatedAt: workOrder.updatedAt
       }
@@ -1502,6 +1570,9 @@ export const getWorkOrdersByRole = async (req, res) => {
           current_stage: workOrder.current_stage,
           // Role-specific timeline
           timeline: roleTimeline,
+          // Farmer list file information
+          farmer_list_file: workOrder.farmer_list_file,
+          farmer_list_original_name: workOrder.farmer_list_original_name,
           created_by: {
             id: workOrder.creator?.id,
             name: workOrder.creator?.name,
@@ -1540,6 +1611,78 @@ export const getWorkOrdersByRole = async (req, res) => {
 
   } catch (error) {
     console.error('Error retrieving work orders by role:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Delete work order (Admin only)
+export const deleteWorkOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if user is authenticated
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Check if user is admin
+    if (!req.user.isAdmin || req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot delete work orders. Only admins are allowed to delete work orders.'
+      });
+    }
+
+    // Find the work order
+    const workOrder = await WorkOrder.findByPk(id);
+    
+    if (!workOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Work order not found'
+      });
+    }
+
+    // Permanently delete the work order and all related data
+    // First delete all related stage records
+    await WorkOrderStage.destroy({
+      where: { work_order_id: id }
+    });
+
+    // Delete all related role-specific records
+    await Promise.all([
+      WorkOrderFactory.destroy({ where: { work_order_id: id } }),
+      WorkOrderJSR.destroy({ where: { work_order_id: id } }),
+      WorkOrderWarehouse.destroy({ where: { work_order_id: id } }),
+      WorkOrderCP.destroy({ where: { work_order_id: id } }),
+      WorkOrderContractor.destroy({ where: { work_order_id: id } }),
+      WorkOrderFarmer.destroy({ where: { work_order_id: id } }),
+      WorkOrderInspection.destroy({ where: { work_order_id: id } })
+    ]);
+
+    // Finally delete the work order itself
+    await workOrder.destroy();
+
+    res.status(200).json({
+      success: true,
+      message: 'Work order permanently deleted successfully',
+      data: {
+        id: workOrder.id,
+        work_order_number: workOrder.work_order_number,
+        title: workOrder.title,
+        deleted_at: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('Error deleting work order:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',

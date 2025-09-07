@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import { Op } from 'sequelize';
-import { User } from '../models/index.js';
+import { User, Admin } from '../models/index.js';
 import { google } from 'googleapis';
 
 // Email transporter configuration
@@ -903,6 +903,185 @@ export const loginWithGoogle = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error'
+    });
+  }
+};
+
+// Get all users from both User and Admin tables
+export const getAllUsers = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      role, 
+      search,
+      is_active 
+    } = req.query;
+
+    // Build where clause for User table
+    const userWhereClause = {};
+    const adminWhereClause = {};
+
+    // Apply role filter
+    if (role) {
+      if (role === 'admin') {
+        // Only fetch from Admin table
+        adminWhereClause.role = 'admin';
+        userWhereClause.id = { [Op.eq]: null }; // This will return no results
+      } else {
+        // Only fetch from User table with specific role
+        userWhereClause.role = role;
+        adminWhereClause.id = { [Op.eq]: null }; // This will return no results
+      }
+    }
+
+    // Apply search filter
+    if (search) {
+      const userSearchCondition = {
+        [Op.or]: [
+          { name: { [Op.like]: `%${search}%` } },
+          { email: { [Op.like]: `%${search}%` } },
+          { phone: { [Op.like]: `%${search}%` } }
+        ]
+      };
+      
+      const adminSearchCondition = {
+        [Op.or]: [
+          { full_name: { [Op.like]: `%${search}%` } },
+          { email: { [Op.like]: `%${search}%` } },
+          { company_name: { [Op.like]: `%${search}%` } }
+        ]
+      };
+      
+      if (role === 'admin') {
+        adminWhereClause[Op.and] = adminSearchCondition;
+      } else if (role && role !== 'admin') {
+        userWhereClause[Op.and] = userSearchCondition;
+      } else {
+        // Search in both tables with appropriate fields
+        userWhereClause[Op.and] = userSearchCondition;
+        adminWhereClause[Op.and] = adminSearchCondition;
+      }
+    }
+
+    // Apply active status filter
+    if (is_active !== undefined) {
+      const activeStatus = is_active === 'true' || is_active === true;
+      userWhereClause.is_active = activeStatus;
+      adminWhereClause.is_active = activeStatus;
+    }
+
+    // Calculate pagination
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    // Fetch users and admins in parallel
+    const [users, admins, userCount, adminCount] = await Promise.all([
+      // Regular users
+      User.findAll({
+        where: userWhereClause,
+        attributes: ['id', 'name', 'email', 'phone', 'role', 'is_active', 'createdAt', 'updatedAt'],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset: offset
+      }),
+      
+      // Admin users
+      Admin.findAll({
+        where: adminWhereClause,
+        attributes: ['id', 'full_name', 'email', 'role', 'company_name', 'is_active', 'createdAt', 'updatedAt'],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset: offset
+      }),
+      
+      // Count users
+      User.count({ where: userWhereClause }),
+      
+      // Count admins
+      Admin.count({ where: adminWhereClause })
+    ]);
+
+    // Transform users to consistent format
+    const transformedUsers = users.map(user => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      company_name: user.company_name,
+      user_type: 'user',
+      is_active: user.is_active,
+      created_at: user.createdAt,
+      updated_at: user.updatedAt
+    }));
+
+    // Transform admins to consistent format
+    const transformedAdmins = admins.map(admin => ({
+      id: admin.id,
+      name: admin.full_name,
+      email: admin.email,
+      phone: null, // Admin doesn't have phone field
+      role: admin.role,
+      company_name: admin.company_name,
+      user_type: 'admin',
+      is_active: admin.is_active,
+      created_at: admin.createdAt,
+      updated_at: admin.updatedAt
+    }));
+
+    // Group users by role
+    const usersByRole = {};
+    
+    // Group regular users by role
+    transformedUsers.forEach(user => {
+      if (!usersByRole[user.role]) {
+        usersByRole[user.role] = [];
+      }
+      usersByRole[user.role].push(user);
+    });
+
+    // Group admins by role
+    transformedAdmins.forEach(admin => {
+      if (!usersByRole[admin.role]) {
+        usersByRole[admin.role] = [];
+      }
+      usersByRole[admin.role].push(admin);
+    });
+
+    // Calculate pagination info
+    const totalCount = userCount + adminCount;
+    const totalPages = Math.ceil(totalCount / parseInt(limit));
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    res.status(200).json({
+      success: true,
+      message: 'All users retrieved successfully',
+      data: {
+        users_by_role: usersByRole,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: totalCount,
+          itemsPerPage: parseInt(limit),
+          hasNextPage,
+          hasPrevPage
+        },
+        summary: {
+          total_users: userCount,
+          total_admins: adminCount,
+          total_all_users: totalCount,
+          roles: Object.keys(usersByRole)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error retrieving all users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
     });
   }
 };

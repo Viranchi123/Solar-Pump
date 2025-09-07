@@ -1,5 +1,5 @@
 import express from 'express';
-import { receiveUnitsFromContractor, reportDefect } from '../controllers/farmerController.js';
+import { receiveUnitsFromContractor, reportDefect, getAllDefectDetails } from '../controllers/farmerController.js';
 import { farmerPhotoUpload, handleMulterError } from '../config/multer.js';
 import { authenticateToken } from '../middleware/auth.js';
 
@@ -21,5 +21,8 @@ router.post('/report-defect',
   handleMulterError,
   reportDefect
 );
+
+// Get all defect details submitted by farmers
+router.get('/defect-details', getAllDefectDetails);
 
 export default router;

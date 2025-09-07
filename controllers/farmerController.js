@@ -3,6 +3,8 @@ import WorkOrderContractor from '../models/WorkOrderContractor.js';
 import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import { Op } from 'sequelize';
+import { sequelize } from '../config/dbConnection.js';
 
 // Step 1: Farmer receives units from contractor
 export const receiveUnitsFromContractor = async (req, res) => {
@@ -50,10 +52,10 @@ export const receiveUnitsFromContractor = async (req, res) => {
     }
 
     // FLOW VALIDATION: Check if work order is in the correct stage for farmer
-    if (workOrder.current_stage !== 'farmer_inspection') {
+    if (workOrder.current_stage !== 'farmer_inspection' && workOrder.current_stage !== 'defect_reported') {
       return res.status(400).json({
         success: false,
-        message: `Work order is not available for farmer operations. Current stage: ${workOrder.current_stage}. Expected stage: farmer_inspection.`
+        message: `Work order is not available for farmer operations. Current stage: ${workOrder.current_stage}. Expected stage: farmer_inspection or defect_reported.`
       });
     }
 
@@ -293,10 +295,10 @@ export const reportDefect = async (req, res) => {
     }
 
     // FLOW VALIDATION: Check if work order is in the correct stage for farmer
-    if (workOrder.current_stage !== 'farmer_inspection') {
+    if (workOrder.current_stage !== 'farmer_inspection' && workOrder.current_stage !== 'defect_reported') {
       return res.status(400).json({
         success: false,
-        message: `Work order is not available for farmer operations. Current stage: ${workOrder.current_stage}. Expected stage: farmer_inspection.`
+        message: `Work order is not available for farmer operations. Current stage: ${workOrder.current_stage}. Expected stage: farmer_inspection or defect_reported.`
       });
     }
 
@@ -352,8 +354,9 @@ export const reportDefect = async (req, res) => {
     // Update farmer stage status
     await WorkOrderStage.update(
       { 
-        status: 'defect_reported',
-        notes: `Defect reported by farmer: ${issue_title}`
+        status: 'failed',
+        notes: `Defect reported by farmer: ${issue_title}`,
+        error_message: `Defect reported: ${issue_title} - ${description}`
       },
       { where: { work_order_id, stage_name: 'farmer' } }
     );
@@ -380,6 +383,169 @@ export const reportDefect = async (req, res) => {
   } catch (error) {
     console.error('Error reporting defect:', error);
     console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Get all defect details submitted by farmers
+export const getAllDefectDetails = async (req, res) => {
+  try {
+    const { 
+      page = 1, 
+      limit = 10, 
+      work_order_id,
+      farmer_status,
+      search 
+    } = req.query;
+
+    // Build where clause
+    const whereClause = {};
+    
+    // Filter by work order ID if provided
+    if (work_order_id) {
+      whereClause.work_order_id = work_order_id;
+    }
+    
+    // Filter by farmer status if provided
+    if (farmer_status) {
+      whereClause.farmer_status = farmer_status;
+    }
+    
+    // Search functionality
+    if (search) {
+      whereClause[Op.or] = [
+        { issue_title: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    // Calculate pagination
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    // Get defect details with work order information
+    const { count, rows: defectDetails } = await WorkOrderFarmer.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: WorkOrder,
+          as: 'workOrder',
+          attributes: ['id', 'work_order_number', 'title', 'region', 'total_quantity', 'status', 'current_stage']
+        },
+        {
+          model: User,
+          as: 'actionUser',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ],
+      order: [['updated_at', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset
+    });
+
+    // Get farmer details from authenticated user
+    const farmerUser = await User.findByPk(req.user.id);
+
+    // Transform the data to include photo URLs and additional details
+    const transformedDefects = defectDetails.map(defect => ({
+      id: defect.id,
+      work_order_id: defect.work_order_id,
+      work_order_number: defect.workOrder?.work_order_number,
+      work_order_title: defect.workOrder?.title,
+      work_order_region: defect.workOrder?.region,
+      work_order_status: defect.workOrder?.status,
+      work_order_current_stage: defect.workOrder?.current_stage,
+      
+      // Farmer details from authenticated user
+      farmer_details: {
+        farmer_name: farmerUser?.name || 'Unknown',
+        farmer_email: farmerUser?.email || 'Unknown',
+        farmer_phone: farmerUser?.phone || 'Not specified',
+        farmer_location: {
+          state: farmerUser?.state || 'Not specified',
+          district: farmerUser?.district || 'Not specified',
+          taluka: farmerUser?.taluka || 'Not specified',
+          village: farmerUser?.village || 'Not specified',
+          company_name: farmerUser?.company_name || 'Not specified'
+        }
+      },
+      
+      // Farmer receipt details
+      total_quantity_received: defect.total_quantity_received,
+      hp_3_received: defect.hp_3_received,
+      hp_5_received: defect.hp_5_received,
+      hp_7_5_received: defect.hp_7_5_received,
+      
+      // Defect details
+      issue_title: defect.issue_title,
+      description: defect.description,
+      farmer_status: defect.farmer_status,
+      date_of_issue: defect.updatedAt, // When the defect was reported/updated
+      
+      // Photos with full URLs
+      photos: {
+        photo_1: defect.photo_1 ? `/uploads/farmer-photos/${defect.photo_1}` : null,
+        photo_2: defect.photo_2 ? `/uploads/farmer-photos/${defect.photo_2}` : null,
+        photo_3: defect.photo_3 ? `/uploads/farmer-photos/${defect.photo_3}` : null
+      },
+      
+      // Action details
+      action_by: {
+        id: defect.actionUser?.id,
+        name: defect.actionUser?.name,
+        email: defect.actionUser?.email,
+        role: defect.actionUser?.role
+      },
+      
+      // Timestamps
+      created_at: defect.createdAt,
+      updated_at: defect.updatedAt
+    }));
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(count / parseInt(limit));
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    // Get summary statistics
+    const summaryStats = await WorkOrderFarmer.findAll({
+      attributes: [
+        'farmer_status',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      group: ['farmer_status']
+    });
+
+    const statusSummary = summaryStats.reduce((acc, stat) => {
+      acc[stat.farmer_status] = parseInt(stat.dataValues.count);
+      return acc;
+    }, {});
+
+    res.status(200).json({
+      success: true,
+      message: 'Defect details retrieved successfully',
+      data: {
+        defects: transformedDefects,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalItems: count,
+          itemsPerPage: parseInt(limit),
+          hasNextPage,
+          hasPrevPage
+        },
+        summary: {
+          total_defects: count,
+          status_breakdown: statusSummary
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error retrieving defect details:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
