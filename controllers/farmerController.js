@@ -5,6 +5,8 @@ import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/dbConnection.js';
+import path from 'path';
+import fs from 'fs';
 
 // Step 1: Farmer receives units from contractor
 export const receiveUnitsFromContractor = async (req, res) => {
@@ -546,6 +548,52 @@ export const getAllDefectDetails = async (req, res) => {
 
   } catch (error) {
     console.error('Error retrieving defect details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Get farmer photo by filename
+export const getFarmerPhoto = async (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    // Validate filename
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        message: 'Filename is required'
+      });
+    }
+
+    // Construct the file path
+    const photoPath = path.join(process.cwd(), 'uploads', 'farmer-photos', filename);
+
+    // Check if file exists
+    if (!fs.existsSync(photoPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Photo not found'
+      });
+    }
+
+    // Get file stats
+    const stats = fs.statSync(photoPath);
+    
+    // Set appropriate headers
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+
+    // Stream the file
+    const fileStream = fs.createReadStream(photoPath);
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('Error serving farmer photo:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',

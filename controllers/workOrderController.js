@@ -10,6 +10,8 @@ import WorkOrderInspection from '../models/WorkOrderInspection.js';
 import User from '../models/User.js';
 import { Op } from 'sequelize';
 import { sequelize } from '../config/dbConnection.js';
+import path from 'path';
+import fs from 'fs';
 
 // Create work order by admin
 export const createWorkOrder = async (req, res) => {
@@ -1683,6 +1685,71 @@ export const deleteWorkOrder = async (req, res) => {
 
   } catch (error) {
     console.error('Error deleting work order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Get farmer list Excel file by work order ID
+export const getFarmerListFile = async (req, res) => {
+  try {
+    const { workOrderId } = req.params;
+
+    // Validate work order ID
+    if (!workOrderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Work order ID is required'
+      });
+    }
+
+    // Find the work order
+    const workOrder = await WorkOrder.findByPk(workOrderId);
+    
+    if (!workOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Work order not found'
+      });
+    }
+
+    // Check if farmer list file exists
+    if (!workOrder.farmer_list_file) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer list file not found for this work order'
+      });
+    }
+
+    // Construct the file path
+    const filePath = path.join(process.cwd(), workOrder.farmer_list_file);
+
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer list file not found on server'
+      });
+    }
+
+    // Get file stats
+    const stats = fs.statSync(filePath);
+    
+    // Set appropriate headers for Excel file download
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${workOrder.farmer_list_original_name || 'farmer-list.xlsx'}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('Error serving farmer list file:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
