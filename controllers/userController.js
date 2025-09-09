@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import nodemailer from 'nodemailer';
 import { Op } from 'sequelize';
-import { User } from '../models/index.js';
+import { User, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWarehouse, WorkOrderCP, WorkOrderContractor, WorkOrderFarmer, WorkOrderInspection } from '../models/index.js';
+import { sequelize } from '../config/dbConnection.js';
 import { google } from 'googleapis';
 
 // Email transporter configuration
@@ -864,6 +865,174 @@ export const loginWithGoogle = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error'
+    });
+  }
+};
+
+
+export const getAdminDashboard = async (req, res) => {
+  try {
+
+    // Get Factory statistics - total manufactured units
+    const factoryStats = await WorkOrderFactory.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_manufactured')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_manufactured')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_manufactured')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_manufactured')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+
+    // Get PDI (Pre-Delivery Inspection) statistics - units dispatched to JSR
+    const pdiStats = await WorkOrderFactory.findAll({
+      where: {
+        status: 'dispatched_to_jsr'
+      },
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_to_jsr')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_to_jsr')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_to_jsr')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_to_jsr')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+const warehouseStats = await WorkOrderWarehouse.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_in_warehouse')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_in_warehouse')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_in_warehouse')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_in_warehouse')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+
+    // Get JSR statistics
+    const jsrStats = await WorkOrderJSR.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_received')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_received')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_received')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_received')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+
+    // Get CP statistics
+    const cpStats = await WorkOrderCP.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_to_cp')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_forwarded_by_cp')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_forwarded_by_cp')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_forwarded_by_cp')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+    const farmerStats = await WorkOrderFarmer.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_received')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_received')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_received')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_received')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+
+    // Get Farmer installed count (completed status)
+    const farmerInstalledStats = await WorkOrderFarmer.findAll({
+      where: {
+        farmer_status: 'completed'
+      },
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_received')), 'installed_units']
+      ],
+      raw: true
+    });
+
+    // Get Inspection statistics
+    const inspectionStats = await WorkOrderInspection.findAll({
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_for_inspection')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_3_for_inspection')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_5_for_inspection')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('hp_7_5_for_inspection')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+const inspectionRejectedStats = await WorkOrderInspection.findAll({
+      where: {
+        inspection_status: 'rejected'
+      },
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('total_quantity_for_inspection')), 'rejected_units']
+      ],
+      raw: true
+    });
+
+    // Prepare dashboard data
+    const dashboardData = {
+      factory: {
+        title: "Factory",
+        units: parseInt(factoryStats[0]?.total_units || 0),
+        icon: "factory",
+        color: "light-blue"
+      },
+      pdi: {
+        title: "PDI",
+        units: parseInt(pdiStats[0]?.total_units || 0),
+        icon: "document",
+        color: "light-green"
+      },
+      warehouse: {
+        title: "Warehouse",
+        units: parseInt(warehouseStats[0]?.total_units || 0),
+        icon: "warehouse",
+        color: "light-yellow"
+      },
+      jsr: {
+        title: "JSR",
+        units: parseInt(jsrStats[0]?.total_units || 0),
+        icon: "document",
+        color: "light-pink"
+      },
+      cp: {
+        title: "CP",
+        units: parseInt(cpStats[0]?.total_units || 0),
+        icon: "person",
+        color: "light-blue"
+      },
+      farmer: {
+        title: "Farmer",
+        units: parseInt(farmerStats[0]?.total_units || 0),
+        icon: "tractor",
+        color: "light-green",
+        additional_info: {
+          installed: parseInt(farmerInstalledStats[0]?.installed_units || 0)
+        }
+      },
+      inspection: {
+        title: "Inspection",
+        units: parseInt(inspectionStats[0]?.total_units || 0),
+        icon: "magnifying-glass",
+        color: "light-green",
+        additional_info: {
+          rejected: parseInt(inspectionRejectedStats[0]?.rejected_units || 0)
+        }
+      }
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Admin dashboard data retrieved successfully',
+      data: dashboardData
+    });
+
+  } catch (error) {
+    console.error('Admin Dashboard Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
     });
   }
 };

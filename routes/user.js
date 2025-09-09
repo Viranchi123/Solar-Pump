@@ -9,7 +9,8 @@ import {
   updateUserPhoto,
   getRoleFields,
   getUsersByRole,
-  loginWithGoogle
+  loginWithGoogle,
+  getAdminDashboard
 } from '../controllers/userController.js';
 import { authenticateToken, checkAnyRole } from '../middleware/auth.js';
 import { generalPhotoUpload } from '../config/multer.js';
@@ -29,5 +30,7 @@ router.get('/role-users',getUsersByRole)
 // Protected routes (authentication required)
 router.get('/profile', authenticateToken, getUserProfile);
 router.put('/update-photo', authenticateToken, generalPhotoUpload.single('photo'), updateUserPhoto);
+router.get('/admin/dashboard', getAdminDashboard);
+
 
 export default router;
