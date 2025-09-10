@@ -13,6 +13,90 @@ import { sequelize } from '../config/dbConnection.js';
 import path from 'path';
 import fs from 'fs';
 
+// Helper function to calculate deadline date for each stage
+const getStageDeadline = (stageName, workOrder) => {
+  // Use creation date if start_date is in the past (more than 30 days ago)
+  const startDate = new Date(workOrder.start_date);
+  const creationDate = new Date(workOrder.createdAt);
+  const now = new Date();
+  const daysSinceStart = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // If start_date is more than 30 days in the past, use creation date instead
+  const effectiveStartDate = daysSinceStart > 30 ? creationDate : startDate;
+  
+  let stageStartDays = 0;
+  let stageTimelineDays = 0;
+
+  switch (stageName.toLowerCase()) {
+    case 'admin_created':
+      stageStartDays = 0;
+      stageTimelineDays = 0;
+      break;
+    case 'factory':
+      stageStartDays = 0;
+      stageTimelineDays = workOrder.factory_timeline || 0;
+      break;
+    case 'jsr':
+      stageStartDays = workOrder.factory_timeline || 0;
+      stageTimelineDays = workOrder.jsr_timeline || 0;
+      break;
+    case 'whouse':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0);
+      stageTimelineDays = workOrder.whouse_timeline || 0;
+      break;
+    case 'cp':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0);
+      stageTimelineDays = workOrder.cp_timeline || 0;
+      break;
+    case 'contractor':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0) + (workOrder.cp_timeline || 0);
+      stageTimelineDays = workOrder.contractor_timeline || 0;
+      break;
+    case 'farmer':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0) + (workOrder.cp_timeline || 0) + (workOrder.contractor_timeline || 0);
+      stageTimelineDays = workOrder.farmer_timeline || 0;
+      break;
+    case 'inspection':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0) + (workOrder.cp_timeline || 0) + (workOrder.contractor_timeline || 0) + (workOrder.farmer_timeline || 0);
+      stageTimelineDays = workOrder.inspection_timeline || 0;
+      break;
+    default:
+      stageStartDays = 0;
+      stageTimelineDays = 0;
+  }
+
+  // Calculate stage start date and deadline using effective start date
+  const stageStartDate = new Date(effectiveStartDate);
+  stageStartDate.setDate(effectiveStartDate.getDate() + stageStartDays);
+  
+  const deadlineDate = new Date(stageStartDate);
+  deadlineDate.setDate(stageStartDate.getDate() + stageTimelineDays);
+  
+  // Calculate days remaining more accurately
+  const timeDiff = deadlineDate.getTime() - now.getTime();
+  const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+  
+  // Debug logging
+  console.log(`Stage: ${stageName}`);
+  console.log(`Original Start Date: ${startDate.toISOString()}`);
+  console.log(`Creation Date: ${creationDate.toISOString()}`);
+  console.log(`Effective Start Date: ${effectiveStartDate.toISOString()}`);
+  console.log(`Stage Start Date: ${stageStartDate.toISOString()}`);
+  console.log(`Deadline Date: ${deadlineDate.toISOString()}`);
+  console.log(`Current Date: ${now.toISOString()}`);
+  console.log(`Time Diff (ms): ${timeDiff}`);
+  console.log(`Days Remaining (raw): ${daysRemaining}`);
+  console.log(`Days Remaining (max 0): ${Math.max(0, daysRemaining)}`);
+  
+  return {
+    stage_start_date: stageStartDate.toISOString(),
+    deadline_date: deadlineDate.toISOString(),
+    timeline_days: stageTimelineDays,
+    days_remaining: Math.max(0, daysRemaining),
+    is_overdue: now > deadlineDate
+  };
+};
+
 // Create work order by admin
 export const createWorkOrder = async (req, res) => {
   try {
@@ -1283,6 +1367,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_sent_to_jsr: sentToJSR,
                   remaining_units_to_manufacture: remainingToManufacture,
                   remaining_units_to_send_to_jsr: remainingToSendToJSR,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   factory_status: factoryData.factory_status,
                   factory_notes: factoryData.factory_notes,
                   created_at: factoryData.createdAt,
@@ -1295,6 +1383,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_sent_to_jsr: 0,
                   remaining_units_to_manufacture: workOrder.total_quantity,
                   remaining_units_to_send_to_jsr: 0,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   factory_status: 'pending',
                   factory_notes: null,
                   created_at: null,
@@ -1320,6 +1412,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_sent_to_warehouse: sentToWarehouse,
                   remaining_units_to_receive: remainingToReceive,
                   remaining_units_to_send_to_warehouse: remainingToSendToWarehouse,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   jsr_status: jsrData.jsr_status,
                   jsr_notes: jsrData.jsr_notes,
                   created_at: jsrData.createdAt,
@@ -1332,6 +1428,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_sent_to_warehouse: 0,
                   remaining_units_to_receive: workOrder.total_quantity,
                   remaining_units_to_send_to_warehouse: 0,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   jsr_status: 'pending',
                   jsr_notes: null,
                   created_at: null,
@@ -1357,6 +1457,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_sent_to_cp: sentToCP,
                   remaining_units_to_receive: remainingToReceive,
                   remaining_units_to_send_to_cp: remainingToSendToCP,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   warehouse_status: warehouseData.warehouse_status,
                   warehouse_notes: warehouseData.warehouse_notes,
                   created_at: warehouseData.createdAt,
@@ -1369,6 +1473,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_sent_to_cp: 0,
                   remaining_units_to_receive: workOrder.total_quantity,
                   remaining_units_to_send_to_cp: 0,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   warehouse_status: 'pending',
                   warehouse_notes: null,
                   created_at: null,
@@ -1394,6 +1502,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_assigned_to_contractor: assignedToContractor,
                   remaining_units_to_receive: remainingToReceive,
                   remaining_units_to_assign: remainingToAssign,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   cp_status: cpData.cp_status,
                   cp_notes: cpData.cp_notes,
                   created_at: cpData.createdAt,
@@ -1406,6 +1518,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_assigned_to_contractor: 0,
                   remaining_units_to_receive: workOrder.total_quantity,
                   remaining_units_to_assign: 0,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   cp_status: 'pending',
                   cp_notes: null,
                   created_at: null,
@@ -1431,6 +1547,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_assigned_to_farmer: assignedToFarmer,
                   remaining_units_to_receive: remainingToReceive,
                   remaining_units_to_assign: remainingToAssign,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   contractor_status: contractorData.contractor_status,
                   contractor_notes: contractorData.contractor_notes,
                   created_at: contractorData.createdAt,
@@ -1443,6 +1563,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units_assigned_to_farmer: 0,
                   remaining_units_to_receive: workOrder.total_quantity,
                   remaining_units_to_assign: 0,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   contractor_status: 'pending',
                   contractor_notes: null,
                   created_at: null,
@@ -1464,6 +1588,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units: totalUnits,
                   total_units_received_from_contractor: receivedFromContractor,
                   remaining_units_to_receive: remainingToReceive,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   farmer_status: farmerData.farmer_status,
                   farmer_notes: farmerData.farmer_notes,
                   created_at: farmerData.createdAt,
@@ -1474,6 +1602,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units: workOrder.total_quantity,
                   total_units_received_from_contractor: 0,
                   remaining_units_to_receive: workOrder.total_quantity,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   farmer_status: 'pending',
                   farmer_notes: null,
                   created_at: null,
@@ -1495,6 +1627,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units: totalUnits,
                   total_units_received_for_inspection: receivedForInspection,
                   remaining_units_to_receive: remainingToReceive,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   inspection_status: inspectionData.inspection_status,
                   inspection_notes: inspectionData.inspection_notes,
                   created_at: inspectionData.createdAt,
@@ -1505,6 +1641,10 @@ export const getWorkOrdersByRole = async (req, res) => {
                   total_units: workOrder.total_quantity,
                   total_units_received_for_inspection: 0,
                   remaining_units_to_receive: workOrder.total_quantity,
+                  // HP breakdown
+                  hp_3_quantity: workOrder.hp_3_quantity,
+                  hp_5_quantity: workOrder.hp_5_quantity,
+                  hp_7_5_quantity: workOrder.hp_7_5_quantity,
                   inspection_status: 'pending',
                   inspection_notes: null,
                   created_at: null,
@@ -1517,6 +1657,10 @@ export const getWorkOrdersByRole = async (req, res) => {
               // For admin, show work order creation details
               roleDetails = {
                 total_units: workOrder.total_quantity,
+                // HP breakdown
+                hp_3_quantity: workOrder.hp_3_quantity,
+                hp_5_quantity: workOrder.hp_5_quantity,
+                hp_7_5_quantity: workOrder.hp_7_5_quantity,
                 work_order_created: true,
                 created_by: workOrder.created_by,
                 created_at: workOrder.createdAt,
@@ -1572,6 +1716,8 @@ export const getWorkOrdersByRole = async (req, res) => {
           current_stage: workOrder.current_stage,
           // Role-specific timeline
           timeline: roleTimeline,
+          // Role-specific deadline information
+          deadline_info: getStageDeadline(role, workOrder),
           // Farmer list file information
           farmer_list_file: workOrder.farmer_list_file,
           farmer_list_original_name: workOrder.farmer_list_original_name,

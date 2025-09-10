@@ -7,6 +7,90 @@ import WorkOrderCP from '../models/WorkOrderCP.js';
 import WorkOrderContractor from '../models/WorkOrderContractor.js';
 import WorkOrderFarmer from '../models/WorkOrderFarmer.js';
 
+// Helper function to calculate deadline date for each stage
+const getStageDeadline = (stageName, workOrder) => {
+  // Use creation date if start_date is in the past (more than 30 days ago)
+  const startDate = new Date(workOrder.start_date);
+  const creationDate = new Date(workOrder.createdAt);
+  const now = new Date();
+  const daysSinceStart = Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // If start_date is more than 30 days in the past, use creation date instead
+  const effectiveStartDate = daysSinceStart > 30 ? creationDate : startDate;
+  
+  let stageStartDays = 0;
+  let stageTimelineDays = 0;
+
+  switch (stageName.toLowerCase()) {
+    case 'admin_created':
+      stageStartDays = 0;
+      stageTimelineDays = 0;
+      break;
+    case 'factory':
+      stageStartDays = 0;
+      stageTimelineDays = workOrder.factory_timeline || 0;
+      break;
+    case 'jsr':
+      stageStartDays = workOrder.factory_timeline || 0;
+      stageTimelineDays = workOrder.jsr_timeline || 0;
+      break;
+    case 'whouse':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0);
+      stageTimelineDays = workOrder.whouse_timeline || 0;
+      break;
+    case 'cp':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0);
+      stageTimelineDays = workOrder.cp_timeline || 0;
+      break;
+    case 'contractor':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0) + (workOrder.cp_timeline || 0);
+      stageTimelineDays = workOrder.contractor_timeline || 0;
+      break;
+    case 'farmer':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0) + (workOrder.cp_timeline || 0) + (workOrder.contractor_timeline || 0);
+      stageTimelineDays = workOrder.farmer_timeline || 0;
+      break;
+    case 'inspection':
+      stageStartDays = (workOrder.factory_timeline || 0) + (workOrder.jsr_timeline || 0) + (workOrder.whouse_timeline || 0) + (workOrder.cp_timeline || 0) + (workOrder.contractor_timeline || 0) + (workOrder.farmer_timeline || 0);
+      stageTimelineDays = workOrder.inspection_timeline || 0;
+      break;
+    default:
+      stageStartDays = 0;
+      stageTimelineDays = 0;
+  }
+
+  // Calculate stage start date and deadline using effective start date
+  const stageStartDate = new Date(effectiveStartDate);
+  stageStartDate.setDate(effectiveStartDate.getDate() + stageStartDays);
+  
+  const deadlineDate = new Date(stageStartDate);
+  deadlineDate.setDate(stageStartDate.getDate() + stageTimelineDays);
+  
+  // Calculate days remaining more accurately
+  const timeDiff = deadlineDate.getTime() - now.getTime();
+  const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+  
+  // Debug logging
+  console.log(`Stage: ${stageName}`);
+  console.log(`Original Start Date: ${startDate.toISOString()}`);
+  console.log(`Creation Date: ${creationDate.toISOString()}`);
+  console.log(`Effective Start Date: ${effectiveStartDate.toISOString()}`);
+  console.log(`Stage Start Date: ${stageStartDate.toISOString()}`);
+  console.log(`Deadline Date: ${deadlineDate.toISOString()}`);
+  console.log(`Current Date: ${now.toISOString()}`);
+  console.log(`Time Diff (ms): ${timeDiff}`);
+  console.log(`Days Remaining (raw): ${daysRemaining}`);
+  console.log(`Days Remaining (max 0): ${Math.max(0, daysRemaining)}`);
+  
+  return {
+    stage_start_date: stageStartDate.toISOString(),
+    deadline_date: deadlineDate.toISOString(),
+    timeline_days: stageTimelineDays,
+    days_remaining: Math.max(0, daysRemaining),
+    is_overdue: now > deadlineDate
+  };
+};
+
 // Helper function to get HP details for each stage
 const getStageHPDetails = (stageName, stageStatus, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails) => {
   const totalQuantity = workOrder.total_quantity;
@@ -214,7 +298,8 @@ export const getCurrentStage = async (req, res) => {
         started_at: currentStage.started_at,
         assigned_to: currentStage.assigned_to,
         notes: currentStage.notes,
-        hp_details: getStageHPDetails(currentStage.stage_name, currentStage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+        hp_details: getStageHPDetails(currentStage.stage_name, currentStage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails),
+        deadline_info: getStageDeadline(currentStage.stage_name, workOrder)
       } : null,
       current_active_stages: currentStages.map(stage => ({
         stage_name: stage.stage_name,
@@ -223,27 +308,31 @@ export const getCurrentStage = async (req, res) => {
         started_at: stage.started_at,
         assigned_to: stage.assigned_to,
         notes: stage.notes,
-        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails),
+        deadline_info: getStageDeadline(stage.stage_name, workOrder)
       })),
       next_pending_stage: nextPendingStage ? {
         stage_name: nextPendingStage.stage_name,
         stage_order: nextPendingStage.stage_order,
         status: nextPendingStage.status,
-        hp_details: getStageHPDetails(nextPendingStage.stage_name, nextPendingStage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+        hp_details: getStageHPDetails(nextPendingStage.stage_name, nextPendingStage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails),
+        deadline_info: getStageDeadline(nextPendingStage.stage_name, workOrder)
       } : null,
       completed_stages: completedStages.map(stage => ({
         stage_name: stage.stage_name,
         stage_order: stage.stage_order,
         completed_at: stage.completed_at,
         assigned_to: stage.assigned_to,
-        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails),
+        deadline_info: getStageDeadline(stage.stage_name, workOrder)
       })),
       failed_stages: failedStages.map(stage => ({
         stage_name: stage.stage_name,
         stage_order: stage.stage_order,
         error_message: stage.error_message,
         retry_count: stage.retry_count,
-        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails),
+        deadline_info: getStageDeadline(stage.stage_name, workOrder)
       })),
       all_stages: allStages.map(stage => ({
         stage_name: stage.stage_name,
@@ -253,7 +342,8 @@ export const getCurrentStage = async (req, res) => {
         completed_at: stage.completed_at,
         assigned_to: stage.assigned_to,
         notes: stage.notes,
-        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails)
+        hp_details: getStageHPDetails(stage.stage_name, stage.status, workOrder, factoryDetails, jsrDetails, warehouseDetails, cpDetails, contractorDetails, farmerDetails),
+        deadline_info: getStageDeadline(stage.stage_name, workOrder)
       })),
       total_stages: allStages.length,
       completed_count: completedStages.length,
