@@ -14,6 +14,7 @@ import workOrderStageRoutes from './workOrderStage.js';
 import barcodeRoutes from './barcode.js';
 import adminRoutes from './admin.js';
 import googleAuthRoutes from './googleAuth.js';
+import notificationRoutes from './notification.js';
 
 const router = express.Router();
 
@@ -32,5 +33,6 @@ router.use('/work-order-stages', workOrderStageRoutes);
 router.use('/barcode', barcodeRoutes);
 router.use('/admin', adminRoutes);
 router.use('/google', googleAuthRoutes);
+router.use('/notifications', notificationRoutes);
 
 export default router;

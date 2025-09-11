@@ -12,6 +12,7 @@ import { Op } from 'sequelize';
 import { sequelize } from '../config/dbConnection.js';
 import path from 'path';
 import fs from 'fs';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Helper function to calculate deadline date for each stage
 const getStageDeadline = (stageName, workOrder) => {
@@ -267,6 +268,25 @@ export const createWorkOrder = async (req, res) => {
         status: 'pending',
         stage_data: { timeline: stage.timeline }
       });
+    }
+
+    // Get creator details for notification
+    let creator;
+    if (req.user.role === 'admin') {
+      // If admin, get from Admin table
+      const Admin = (await import('../models/Admin.js')).default;
+      creator = await Admin.findByPk(req.user.id);
+    } else {
+      // If regular user, get from User table
+      creator = await User.findByPk(req.user.id);
+    }
+
+    // Send notifications
+    try {
+      await WorkOrderNotifications.workOrderCreated(workOrder, creator);
+    } catch (notificationError) {
+      console.error('Error sending work order creation notifications:', notificationError);
+      // Don't fail the request if notifications fail
     }
 
     res.status(201).json({

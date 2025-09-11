@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Pump Notification Test</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .notification {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+        }
+        .notification.high {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        .notification.urgent {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .notification.medium {
+            background: #e8f5e8;
+            border-left-color: #4caf50;
+        }
+        .notification.low {
+            background: #f3e5f5;
+            border-left-color: #9c27b0;
+        }
+        .notification.work-order-created {
+            background: #e8f5e8;
+            border-left-color: #4caf50;
+        }
+        .notification.units-assigned {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        .notification.stage-completed {
+            background: #e3f2fd;
+            border-left-color: #2196f3;
+        }
+        .notification.deadline-warning {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .notification.defect-reported {
+            background: #fce4ec;
+            border-left-color: #e91e63;
+        }
+        .notification-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .notification-message {
+            color: #666;
+            font-size: 14px;
+        }
+        .notification-time {
+            color: #999;
+            font-size: 12px;
+            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .notification-details {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+            background: rgba(0,0,0,0.05);
+            padding: 4px 8px;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+        .notification-status {
+            font-size: 10px;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 8px 16px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+        .disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .form-group {
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .notifications-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Solar Pump Notification System Test</h1>
+        
+        <div id="connectionStatus" class="status disconnected">
+            Disconnected
+        </div>
+
+        <div class="form-group">
+            <label for="jwtToken">JWT Token:</label>
+            <input type="text" id="jwtToken" placeholder="Enter your JWT token here">
+        </div>
+
+        <div class="form-group">
+            <label for="userRole">User Role:</label>
+            <select id="userRole">
+                <option value="admin">Admin</option>
+                <option value="factory">Factory</option>
+                <option value="jsr">JSR</option>
+                <option value="whouse">Warehouse</option>
+                <option value="cp">CP</option>
+                <option value="contractor">Contractor</option>
+                <option value="farmer">Farmer</option>
+                <option value="inspection">Inspection</option>
+            </select>
+        </div>
+
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+        <button onclick="clearNotifications()">Clear Notifications</button>
+
+        <h3>Real-time Notifications <span id="notificationCounter" style="background: #f44336; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 10px;">0</span></h3>
+        <div id="notifications" class="notifications-container">
+            <p>Connect to start receiving notifications...</p>
+        </div>
+
+        <h3>API Test</h3>
+        <button onclick="getNotifications()">Get Notifications</button>
+        <button onclick="getUnreadCount()">Get Unread Count</button>
+        <button onclick="markAllAsRead()">Mark All as Read</button>
+    </div>
+
+    <script>
+        let socket = null;
+        let notificationCount = 0;
+
+        function connect() {
+            const token = document.getElementById('jwtToken').value;
+            const role = document.getElementById('userRole').value;
+
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            if (socket) {
+                socket.disconnect();
+            }
+
+            socket = io('http://localhost:5006', {
+                auth: {
+                    token: token
+                }
+            });
+
+            socket.on('connect', () => {
+                updateConnectionStatus(true);
+                addNotification('Connected to server', 'success');
+            });
+
+            socket.on('disconnect', () => {
+                updateConnectionStatus(false);
+                addNotification('Disconnected from server', 'error');
+            });
+
+            socket.on('connect_error', (error) => {
+                updateConnectionStatus(false);
+                addNotification('Connection error: ' + error.message, 'error');
+            });
+
+            // Listen for different notification types
+            socket.on('newNotification', (notification) => {
+                addNotification(notification.title, 'info', notification);
+            });
+
+            socket.on('roleNotification', (notification) => {
+                addNotification(`[${role.toUpperCase()}] ${notification.title}`, 'info', notification);
+            });
+
+            socket.on('adminNotification', (notification) => {
+                addNotification(`[ADMIN] ${notification.title}`, 'admin', notification);
+            });
+
+            socket.on('workOrderCreated', (data) => {
+                addNotification(`New Work Order: ${data.work_order_number}`, 'success', data);
+            });
+
+            socket.on('stageCompleted', (data) => {
+                addNotification(`Stage Completed: ${data.completed_stage} → ${data.next_stage}`, 'info', data);
+            });
+
+            socket.on('deadlineApproaching', (data) => {
+                addNotification(`Deadline Warning: ${data.days_remaining} days remaining`, 'warning', data);
+            });
+
+            socket.on('unitsNotDispatched', (data) => {
+                addNotification(`Units Not Dispatched: ${data.remaining_units} units pending`, 'warning', data);
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                updateConnectionStatus(false);
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.textContent = 'Connected';
+                status.className = 'status connected';
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'status disconnected';
+            }
+        }
+
+        function addNotification(title, type, data = null) {
+            const container = document.getElementById('notifications');
+            const notification = document.createElement('div');
+            
+            // Determine notification class based on type and priority
+            let notificationClass = 'notification';
+            if (data && data.priority) {
+                notificationClass += ` ${data.priority}`;
+            } else {
+                notificationClass += ` ${type}`;
+            }
+            
+            // Add type-specific styling
+            if (data && data.type) {
+                switch(data.type) {
+                    case 'work_order_created':
+                        notificationClass += ' work-order-created';
+                        break;
+                    case 'units_assigned':
+                        notificationClass += ' units-assigned';
+                        break;
+                    case 'stage_completed':
+                        notificationClass += ' stage-completed';
+                        break;
+                    case 'deadline_warning':
+                        notificationClass += ' deadline-warning';
+                        break;
+                    case 'defect_reported':
+                        notificationClass += ' defect-reported';
+                        break;
+                }
+            }
+            
+            notification.className = notificationClass;
+            
+            const titleEl = document.createElement('div');
+            titleEl.className = 'notification-title';
+            titleEl.textContent = title;
+            
+            const messageEl = document.createElement('div');
+            messageEl.className = 'notification-message';
+            if (data && data.message) {
+                messageEl.textContent = data.message;
+            } else if (data && data.title) {
+                messageEl.textContent = data.title;
+            }
+            
+            // Add detailed information
+            const detailsEl = document.createElement('div');
+            detailsEl.className = 'notification-details';
+            detailsEl.style.fontSize = '12px';
+            detailsEl.style.color = '#666';
+            detailsEl.style.marginTop = '4px';
+            
+            if (data) {
+                const details = [];
+                if (data.type) details.push(`Type: ${data.type}`);
+                if (data.priority) details.push(`Priority: ${data.priority}`);
+                if (data.work_order_number) details.push(`WO: ${data.work_order_number}`);
+                if (data.total_quantity) details.push(`Units: ${data.total_quantity}`);
+                if (data.creator_name) details.push(`By: ${data.creator_name}`);
+                if (data.target_role) details.push(`Target: ${data.target_role}`);
+                if (data.completed_stage) details.push(`Stage: ${data.completed_stage}`);
+                if (data.next_stage) details.push(`Next: ${data.next_stage}`);
+                if (data.days_remaining !== undefined) details.push(`Days: ${data.days_remaining}`);
+                if (data.remaining_units) details.push(`Remaining: ${data.remaining_units}`);
+                
+                detailsEl.textContent = details.join(' | ');
+            }
+            
+            const timeEl = document.createElement('div');
+            timeEl.className = 'notification-time';
+            timeEl.textContent = new Date().toLocaleTimeString();
+            
+            // Add read/unread status
+            if (data && data.is_read !== undefined) {
+                const statusEl = document.createElement('div');
+                statusEl.className = 'notification-status';
+                statusEl.style.fontSize = '10px';
+                statusEl.style.color = data.is_read ? '#4caf50' : '#f44336';
+                statusEl.style.fontWeight = 'bold';
+                statusEl.textContent = data.is_read ? 'READ' : 'UNREAD';
+                timeEl.appendChild(statusEl);
+            }
+            
+            notification.appendChild(titleEl);
+            notification.appendChild(messageEl);
+            if (detailsEl.textContent) {
+                notification.appendChild(detailsEl);
+            }
+            notification.appendChild(timeEl);
+            
+            container.insertBefore(notification, container.firstChild);
+            
+            // Keep only last 20 notifications
+            while (container.children.length > 20) {
+                container.removeChild(container.lastChild);
+            }
+            
+            notificationCount++;
+            updateNotificationCounter();
+        }
+
+        function updateNotificationCounter() {
+            const counter = document.getElementById('notificationCounter');
+            counter.textContent = notificationCount;
+            counter.style.background = notificationCount > 0 ? '#f44336' : '#4caf50';
+        }
+
+        function clearNotifications() {
+            document.getElementById('notifications').innerHTML = '<p>Notifications cleared...</p>';
+            notificationCount = 0;
+            updateNotificationCounter();
+        }
+
+        async function getNotifications() {
+            const token = document.getElementById('jwtToken').value;
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:5006/api/notifications', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const data = await response.json();
+                console.log('Notifications:', data);
+                
+                // Display notifications in the UI
+                const container = document.getElementById('notifications');
+                container.innerHTML = '<p>API Notifications:</p>';
+                
+                if (data.data.notifications.length === 0) {
+                    container.innerHTML += '<p>No notifications found</p>';
+                } else {
+                    data.data.notifications.forEach(notification => {
+                        // The data is already parsed by the API controller
+                        const notificationData = notification.data;
+
+                        addNotification(
+                            notification.title, 
+                            notification.priority || 'medium',
+                            {
+                                type: notification.type,
+                                priority: notification.priority,
+                                message: notification.message,
+                                work_order_number: notification.work_order?.work_order_number,
+                                total_quantity: notificationData?.total_quantity || null,
+                                creator_name: notificationData?.creator_name || null,
+                                is_read: notification.is_read,
+                                created_at: notification.created_at
+                            }
+                        );
+                    });
+                }
+                
+                alert(`Found ${data.data.notifications.length} notifications (${data.data.unread_count} unread)`);
+            } catch (error) {
+                console.error('Error fetching notifications:', error);
+                alert('Error fetching notifications: ' + error.message);
+            }
+        }
+
+        async function getUnreadCount() {
+            const token = document.getElementById('jwtToken').value;
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:5006/api/notifications/unread-count', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                const data = await response.json();
+                console.log('Unread count:', data);
+                alert(`Unread notifications: ${data.data.unread_count}`);
+            } catch (error) {
+                console.error('Error fetching unread count:', error);
+                alert('Error fetching unread count: ' + error.message);
+            }
+        }
+
+        async function markAllAsRead() {
+            const token = document.getElementById('jwtToken').value;
+            if (!token) {
+                alert('Please enter a JWT token');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:5006/api/notifications/read-all', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await response.json();
+                console.log('Mark all as read:', data);
+                alert('All notifications marked as read');
+            } catch (error) {
+                console.error('Error marking notifications as read:', error);
+                alert('Error marking notifications as read: ' + error.message);
+            }
+        }
+
+        // Auto-connect on page load if token is provided
+        window.onload = function() {
+            const token = localStorage.getItem('jwt_token');
+            if (token) {
+                document.getElementById('jwtToken').value = token;
+            }
+        };
+
+        // Save token to localStorage
+        document.getElementById('jwtToken').addEventListener('change', function() {
+            localStorage.setItem('jwt_token', this.value);
+        });
+    </script>
+</body>
+</html>

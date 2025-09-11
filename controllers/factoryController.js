@@ -2,6 +2,7 @@ import WorkOrderFactory from '../models/WorkOrderFactory.js';
 import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Step 1: Enter units manufactured quantities
 export const enterManufacturedUnits = async (req, res) => {
@@ -460,6 +461,15 @@ export const dispatchToJSR = async (req, res) => {
 
     // Get updated work order to verify stage change
     const updatedWorkOrder = await WorkOrder.findByPk(work_order_id);
+
+    // Send notifications
+    try {
+      const actionUser = await User.findByPk(req.user.id);
+      await WorkOrderNotifications.stageCompleted(updatedWorkOrder, 'factory', 'jsr', actionUser);
+    } catch (notificationError) {
+      console.error('Error sending stage completion notifications:', notificationError);
+      // Don't fail the request if notifications fail
+    }
 
     res.status(200).json({
       success: true,

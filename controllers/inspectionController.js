@@ -3,6 +3,7 @@ import WorkOrderContractor from '../models/WorkOrderContractor.js';
 import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Step 1: Inspection receives and verifies units from contractor
 export const receiveAndVerifyUnits = async (req, res) => {
@@ -404,6 +405,23 @@ export const acceptOrRejectInspection = async (req, res) => {
         updatedAt: updatedInspectionEntry.updatedAt
       }
     });
+
+    // Send notifications for inspection completion
+    try {
+      const workOrder = await WorkOrder.findByPk(work_order_id);
+      const actionUser = await User.findByPk(req.user.id);
+      
+      if (inspection_status === 'approved') {
+        // Notify that inspection is completed and work order is approved
+        await WorkOrderNotifications.stageCompleted(workOrder, 'inspection', 'completed', actionUser);
+      } else if (inspection_status === 'rejected') {
+        // Notify that inspection is rejected
+        await WorkOrderNotifications.stageCompleted(workOrder, 'inspection', 'rejected', actionUser);
+      }
+    } catch (notificationError) {
+      console.error('Error sending inspection completion notifications:', notificationError);
+      // Don't fail the request if notifications fail
+    }
 
   } catch (error) {
     console.error('Error accepting/rejecting inspection:', error);

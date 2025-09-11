@@ -7,6 +7,7 @@ import { Op } from 'sequelize';
 import { sequelize } from '../config/dbConnection.js';
 import path from 'path';
 import fs from 'fs';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Step 1: Farmer receives units from contractor
 export const receiveUnitsFromContractor = async (req, res) => {
@@ -381,6 +382,49 @@ export const reportDefect = async (req, res) => {
         updatedAt: updatedFarmerEntry.updatedAt
       }
     });
+
+    // Send notifications for defect report
+    try {
+      const workOrder = await WorkOrder.findByPk(work_order_id);
+      const actionUser = await User.findByPk(req.user.id);
+      
+      // Notify admins about defect report
+      await WorkOrderNotifications.createNotification({
+        userRole: 'admin',
+        type: 'defect_reported',
+        title: 'Defect Reported by Farmer',
+        message: `Work order ${workOrder.work_order_number} has a defect reported: ${issue_title}`,
+        data: {
+          work_order_number: workOrder.work_order_number,
+          issue_title,
+          description,
+          farmer_name: actionUser.name,
+          work_order_id
+        },
+        workOrderId: workOrder.id,
+        priority: 'high'
+      });
+
+      // Notify inspection team about defect
+      await WorkOrderNotifications.createNotification({
+        userRole: 'inspection',
+        type: 'defect_reported',
+        title: 'Defect Requires Inspection',
+        message: `Defect reported for work order ${workOrder.work_order_number}: ${issue_title}`,
+        data: {
+          work_order_number: workOrder.work_order_number,
+          issue_title,
+          description,
+          farmer_name: actionUser.name,
+          work_order_id
+        },
+        workOrderId: workOrder.id,
+        priority: 'high'
+      });
+    } catch (notificationError) {
+      console.error('Error sending defect report notifications:', notificationError);
+      // Don't fail the request if notifications fail
+    }
 
   } catch (error) {
     console.error('Error reporting defect:', error);

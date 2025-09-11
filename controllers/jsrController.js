@@ -3,6 +3,7 @@ import WorkOrderFactory from '../models/WorkOrderFactory.js';
 import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Step 1: JSR receives and verifies units from factory
 export const receiveAndVerifyUnits = async (req, res) => {
@@ -648,6 +649,18 @@ export const dispatchToWarehouse = async (req, res) => {
     const finalHp3RemainingReceived = jsrEntry.hp_3_received - newHp3DispatchedToWarehouse;
     const finalHp5RemainingReceived = jsrEntry.hp_5_received - newHp5DispatchedToWarehouse;
     const finalHp75RemainingReceived = jsrEntry.hp_7_5_received - newHp75DispatchedToWarehouse;
+
+    // Send notifications if all units are dispatched
+    if (allUnitsDispatched) {
+      try {
+        const workOrder = await WorkOrder.findByPk(work_order_id);
+        const actionUser = await User.findByPk(req.user.id);
+        await WorkOrderNotifications.stageCompleted(workOrder, 'jsr', 'whouse', actionUser);
+      } catch (notificationError) {
+        console.error('Error sending stage completion notifications:', notificationError);
+        // Don't fail the request if notifications fail
+      }
+    }
 
     res.status(200).json({
       success: true,

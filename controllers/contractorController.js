@@ -3,6 +3,7 @@ import WorkOrderCP from '../models/WorkOrderCP.js';
 import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Step 1: Contractor receives units from CP (units assigned to contractor)
 export const receiveUnitsInContractor = async (req, res) => {
@@ -533,6 +534,20 @@ export const dispatchToFarmerAndInspection = async (req, res) => {
         work_order_current_stage: allUnitsDispatched ? 'farmer_inspection' : 'contractor'
       }
     });
+
+    // Send notifications if all units are dispatched
+    if (allUnitsDispatched) {
+      try {
+        const workOrder = await WorkOrder.findByPk(work_order_id);
+        const actionUser = await User.findByPk(req.user.id);
+        // Notify both farmer and inspection roles
+        await WorkOrderNotifications.stageCompleted(workOrder, 'contractor', 'farmer', actionUser);
+        await WorkOrderNotifications.stageCompleted(workOrder, 'contractor', 'inspection', actionUser);
+      } catch (notificationError) {
+        console.error('Error sending stage completion notifications:', notificationError);
+        // Don't fail the request if notifications fail
+      }
+    }
 
   } catch (error) {
     console.error('Error dispatching to farmer and inspection:', error);

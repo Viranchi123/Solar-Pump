@@ -11,6 +11,7 @@ import WorkOrderFarmer from './WorkOrderFarmer.js';
 import WorkOrderStage from './WorkOrderStage.js';
 import BarcodeData from './BarcodeData.js';
 import Admin from './Admin.js';
+import Notification from './Notification.js';
 
 // Set up associations
 User.hasMany(Remark, { foreignKey: 'user_id', as: 'remarks' });
@@ -112,9 +113,16 @@ WorkOrderStage.hasOne(WorkOrderStage, { foreignKey: 'next_stage_id', as: 'previo
 User.hasMany(BarcodeData, { foreignKey: 'uploaded_by', as: 'uploadedBarcodeData' });
 BarcodeData.belongsTo(User, { foreignKey: 'uploaded_by', as: 'uploader' });
 
+// Notification associations
+User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
+Notification.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
+WorkOrder.hasMany(Notification, { foreignKey: 'work_order_id', as: 'notifications' });
+Notification.belongsTo(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
+
 // Admin associations (no foreign keys needed as Admin is separate from User)
 // Export models
-export { User, Remark, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWarehouse, WorkOrderCP, WorkOrderContractor, WorkOrderInspection, WorkOrderFarmer, WorkOrderStage, BarcodeData, Admin };
+export { User, Remark, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWarehouse, WorkOrderCP, WorkOrderContractor, WorkOrderInspection, WorkOrderFarmer, WorkOrderStage, BarcodeData, Admin, Notification };
 
 // Sync all models with database
 export const syncModels = async () => {
@@ -132,6 +140,7 @@ export const syncModels = async () => {
     await WorkOrderStage.sync({ alter: true });
     await BarcodeData.sync({ alter: true });
     await Admin.sync({ alter: true });
+    await Notification.sync({ alter: true });
     console.log('✅ All models synchronized successfully');
   } catch (error) {
     console.error('❌ Error syncing models:', error);

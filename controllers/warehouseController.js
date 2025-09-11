@@ -3,6 +3,7 @@ import WorkOrderJSR from '../models/WorkOrderJSR.js';
 import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import WorkOrderStage from '../models/WorkOrderStage.js';
+import { WorkOrderNotifications } from '../services/notificationService.js';
 
 // Step 1: Warehouse receives units from JSR (units in warehouse)
 export const receiveUnitsInWarehouse = async (req, res) => {
@@ -553,6 +554,18 @@ export const dispatchToCP = async (req, res) => {
         work_order_current_stage: allUnitsComplete ? 'cp' : 'whouse'
       }
     });
+
+    // Send notifications if all units are assigned
+    if (allUnitsComplete) {
+      try {
+        const workOrder = await WorkOrder.findByPk(work_order_id);
+        const actionUser = await User.findByPk(req.user.id);
+        await WorkOrderNotifications.stageCompleted(workOrder, 'whouse', 'cp', actionUser);
+      } catch (notificationError) {
+        console.error('Error sending stage completion notifications:', notificationError);
+        // Don't fail the request if notifications fail
+      }
+    }
 
   } catch (error) {
     console.error('Error dispatching to CP:', error);
