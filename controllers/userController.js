@@ -1084,67 +1084,79 @@ export const getAllUsers = async (req, res) => {
 export const getAdminDashboard = async (req, res) => {
   try {
 
-    // Get Factory statistics - total manufactured units
-    const factoryStats = await WorkOrderFactory.findAll({
+    // Get Factory statistics - total units assigned to factory (from all work orders)
+    const factoryStats = await WorkOrder.findAll({
+      where: {
+        current_stage: {
+          [Op.in]: ['admin_created', 'factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection', 'farmer_inspection', 'defect_reported']
+        }
+      },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_manufactured')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_manufactured')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_manufactured')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_manufactured')), 'hp_7_5_units']
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
       ],
       raw: true
     });
 
-    // Get PDI (Pre-Delivery Inspection) statistics - units dispatched to JSR
-    const pdiStats = await WorkOrderFactory.findAll({
+const warehouseStats = await WorkOrder.findAll({
       where: {
-        status: 'dispatched_to_jsr'
+        current_stage: {
+          [Op.in]: ['whouse', 'cp', 'contractor', 'farmer', 'inspection', 'farmer_inspection', 'defect_reported']
+        }
       },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_to_jsr')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_to_jsr')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_to_jsr')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_to_jsr')), 'hp_7_5_units']
-      ],
-      raw: true
-    });
-const warehouseStats = await WorkOrderWarehouse.findAll({
-      attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_in_warehouse')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_in_warehouse')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_in_warehouse')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_in_warehouse')), 'hp_7_5_units']
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
       ],
       raw: true
     });
 
     // Get JSR statistics
-    const jsrStats = await WorkOrderJSR.findAll({
+    const jsrStats = await WorkOrder.findAll({
+      where: {
+        current_stage: {
+          [Op.in]: ['jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection', 'farmer_inspection', 'defect_reported']
+        }
+      },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_received')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_received')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_received')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_received')), 'hp_7_5_units']
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
       ],
       raw: true
     });
 
     // Get CP statistics
-    const cpStats = await WorkOrderCP.findAll({
+    const cpStats = await WorkOrder.findAll({
+      where: {
+        current_stage: {
+          [Op.in]: ['cp', 'contractor', 'farmer', 'inspection', 'farmer_inspection', 'defect_reported']
+        }
+      },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_to_cp')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_forwarded_by_cp')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_forwarded_by_cp')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_forwarded_by_cp')), 'hp_7_5_units']
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
       ],
       raw: true
     });
-    const farmerStats = await WorkOrderFarmer.findAll({
+    const farmerStats = await WorkOrder.findAll({
+      where: {
+        current_stage: {
+          [Op.in]: ['farmer', 'inspection', 'farmer_inspection', 'defect_reported']
+        }
+      },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_received')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_received')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_received')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_received')), 'hp_7_5_units']
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
       ],
       raw: true
     });
@@ -1161,15 +1173,37 @@ const warehouseStats = await WorkOrderWarehouse.findAll({
     });
 
     // Get Inspection statistics
-    const inspectionStats = await WorkOrderInspection.findAll({
+    const inspectionStats = await WorkOrder.findAll({
+      where: {
+        current_stage: {
+          [Op.in]: ['inspection', 'farmer_inspection', 'defect_reported']
+        }
+      },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('total_quantity_for_inspection')), 'total_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_3_for_inspection')), 'hp_3_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_5_for_inspection')), 'hp_5_units'],
-        [sequelize.fn('SUM', sequelize.col('hp_7_5_for_inspection')), 'hp_7_5_units']
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
       ],
       raw: true
     });
+
+    // Get Contractor statistics
+    const contractorStats = await WorkOrder.findAll({
+      where: {
+        current_stage: {
+          [Op.in]: ['contractor', 'farmer', 'inspection', 'farmer_inspection', 'defect_reported']
+        }
+      },
+      attributes: [
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.total_quantity')), 'total_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_3_quantity')), 'hp_3_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_5_quantity')), 'hp_5_units'],
+        [sequelize.fn('SUM', sequelize.col('WorkOrder.hp_7_5_quantity')), 'hp_7_5_units']
+      ],
+      raw: true
+    });
+
 const inspectionRejectedStats = await WorkOrderInspection.findAll({
       where: {
         inspection_status: 'rejected'
@@ -1188,12 +1222,6 @@ const inspectionRejectedStats = await WorkOrderInspection.findAll({
         icon: "factory",
         color: "light-blue"
       },
-      pdi: {
-        title: "PDI",
-        units: parseInt(pdiStats[0]?.total_units || 0),
-        icon: "document",
-        color: "light-green"
-      },
       warehouse: {
         title: "Warehouse",
         units: parseInt(warehouseStats[0]?.total_units || 0),
@@ -1211,6 +1239,12 @@ const inspectionRejectedStats = await WorkOrderInspection.findAll({
         units: parseInt(cpStats[0]?.total_units || 0),
         icon: "person",
         color: "light-blue"
+      },
+      contractor: {
+        title: "Contractor",
+        units: parseInt(contractorStats[0]?.total_units || 0),
+        icon: "hammer",
+        color: "light-orange"
       },
       farmer: {
         title: "Farmer",
