@@ -3,6 +3,7 @@ import WorkOrder from '../models/WorkOrder.js';
 import User from '../models/User.js';
 import Admin from '../models/Admin.js';
 import { Op } from 'sequelize';
+import FCMService from './fcmService.js';
 
 // Socket.IO instance (will be set from server.js)
 let io = null;
@@ -94,6 +95,35 @@ class NotificationService {
             target_role: userRole
           });
         }
+      }
+
+      // Send push notification via FCM
+      // This ensures notification reaches device even when app is closed
+      try {
+        const pushNotification = {
+          title: title,
+          body: message
+        };
+
+        const pushData = {
+          notification_id: notification.id,
+          type: type,
+          work_order_id: workOrderId,
+          ...(data || {})
+        };
+
+        const fcmPriority = priority === 'urgent' || priority === 'high' ? 'high' : 'normal';
+
+        if (userId) {
+          // Send to specific user
+          await FCMService.sendToUser(userId, pushNotification, pushData, fcmPriority);
+        } else {
+          // Send to all users with the specified role
+          await FCMService.sendToRole(userRole, pushNotification, pushData, fcmPriority);
+        }
+      } catch (fcmError) {
+        // Don't fail the notification creation if push notification fails
+        console.error('Error sending push notification:', fcmError.message);
       }
 
       return notification;

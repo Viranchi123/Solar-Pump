@@ -2,3 +2,6 @@ node_modules
 .env
 # Logs
 logs
+
+# Firebase service account credentials (IMPORTANT: Keep this secret!)
+config/firebase-service-account.json

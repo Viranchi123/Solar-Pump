@@ -10,6 +10,7 @@ import router from "./routes/index.js";
 import { syncModels } from "./models/index.js";
 import { setSocketIO } from "./services/notificationService.js";
 import DeadlineMonitorService from "./services/deadlineMonitorService.js";
+import { initializeFirebase } from "./config/firebase.js";
 
 // Load environment variables
 dotenv.config();
@@ -121,9 +122,14 @@ const startServer = async () => {
   try {
     await connectDB();
     await syncModels(); // Sync models with database
+    
+    // Initialize Firebase for push notifications
+    initializeFirebase();
+    
     server.listen(PORT, () => {
       console.log(colors.cyan(`🚀 Server running on port ${PORT}`));
       console.log(colors.green(`📡 Socket.IO enabled for real-time notifications`));
+      console.log(colors.magenta(`🔔 Firebase Push Notifications ready`));
       
       // Start deadline monitoring service
       DeadlineMonitorService.start();

@@ -7,7 +7,11 @@ import {
   markAllAsRead,
   deleteNotification,
   getUnreadCount,
-  cleanupOldNotifications
+  cleanupOldNotifications,
+  registerDevice,
+  unregisterDevice,
+  getUserDevices,
+  testPushNotification
 } from '../controllers/notificationController.js';
 
 const router = express.Router();
@@ -32,5 +36,17 @@ router.delete('/:id', authenticateToken, deleteNotification);
 
 // Clean up old notifications (admin only)
 router.delete('/cleanup', authenticateToken, cleanupOldNotifications);
+
+// Device registration for push notifications
+router.post('/device/register', authenticateToken, registerDevice);
+
+// Unregister device
+router.post('/device/unregister', authenticateToken, unregisterDevice);
+
+// Get user's registered devices
+router.get('/devices', authenticateToken, getUserDevices);
+
+// Test push notification
+router.post('/test-push', authenticateToken, testPushNotification);
 
 export default router;

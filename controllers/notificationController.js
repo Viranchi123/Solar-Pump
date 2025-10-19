@@ -1,4 +1,5 @@
 import NotificationService from '../services/notificationService.js';
+import FCMService from '../services/fcmService.js';
 import { Op } from 'sequelize';
 
 // Get notifications for authenticated user
@@ -240,6 +241,157 @@ export const cleanupOldNotifications = async (req, res) => {
 
   } catch (error) {
     console.error('Error cleaning up old notifications:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Register device token for push notifications
+export const registerDevice = async (req, res) => {
+  try {
+    const { device_token, platform, device_name, app_version } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!device_token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Device token is required'
+      });
+    }
+
+    if (platform && !['ios', 'android', 'web'].includes(platform)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid platform. Must be ios, android, or web'
+      });
+    }
+
+    // Register device token
+    const deviceTokenRecord = await FCMService.registerDeviceToken(
+      userId,
+      device_token,
+      platform || 'android',
+      {
+        device_name,
+        app_version
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Device registered successfully for push notifications',
+      data: {
+        id: deviceTokenRecord.id,
+        platform: deviceTokenRecord.platform,
+        device_name: deviceTokenRecord.device_name,
+        is_active: deviceTokenRecord.is_active,
+        created_at: deviceTokenRecord.created_at
+      }
+    });
+
+  } catch (error) {
+    console.error('Error registering device:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Unregister device token
+export const unregisterDevice = async (req, res) => {
+  try {
+    const { device_token } = req.body;
+    const userId = req.user.id;
+
+    if (!device_token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Device token is required'
+      });
+    }
+
+    await FCMService.removeDeviceToken(userId, device_token);
+
+    res.status(200).json({
+      success: true,
+      message: 'Device unregistered successfully'
+    });
+
+  } catch (error) {
+    console.error('Error unregistering device:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Get user's registered devices
+export const getUserDevices = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const devices = await FCMService.getUserDeviceTokens(userId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Devices retrieved successfully',
+      data: {
+        devices: devices.map(device => ({
+          id: device.id,
+          platform: device.platform,
+          device_name: device.device_name,
+          app_version: device.app_version,
+          is_active: device.is_active,
+          last_used_at: device.last_used_at,
+          created_at: device.created_at
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting user devices:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+// Test push notification (for testing purposes)
+export const testPushNotification = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { title, message } = req.body;
+
+    const notification = {
+      title: title || 'Test Notification',
+      body: message || 'This is a test push notification'
+    };
+
+    const data = {
+      type: 'test',
+      timestamp: new Date().toISOString()
+    };
+
+    const result = await FCMService.sendToUser(userId, notification, data, 'high');
+
+    res.status(200).json({
+      success: true,
+      message: 'Test notification sent',
+      data: result
+    });
+
+  } catch (error) {
+    console.error('Error sending test notification:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
