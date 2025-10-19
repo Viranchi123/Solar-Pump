@@ -10,7 +10,7 @@ let firebaseApp = null;
 
 /**
  * Initialize Firebase Admin SDK
- * Place your firebase service account JSON file in config/firebase-service-account.json
+ * Supports both file-based (development) and environment variable (production) configuration
  */
 export const initializeFirebase = () => {
   try {
@@ -19,16 +19,31 @@ export const initializeFirebase = () => {
       return firebaseApp;
     }
 
-    const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
-    
-    // Check if service account file exists
-    if (!fs.existsSync(serviceAccountPath)) {
-      console.warn('⚠️  Firebase service account file not found at:', serviceAccountPath);
-      console.warn('⚠️  Push notifications will not work. Please add firebase-service-account.json');
-      return null;
-    }
+    let serviceAccount;
 
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    // Try to load from environment variable first (Production)
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      console.log('🔧 Loading Firebase credentials from environment variable');
+      try {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      } catch (parseError) {
+        console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT environment variable');
+        return null;
+      }
+    } 
+    // Fall back to file (Local development)
+    else {
+      const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+      
+      if (!fs.existsSync(serviceAccountPath)) {
+        console.warn('⚠️  Firebase service account file not found at:', serviceAccountPath);
+        console.warn('⚠️  Push notifications will not work. Add firebase-service-account.json or set FIREBASE_SERVICE_ACCOUNT env variable');
+        return null;
+      }
+
+      console.log('🔧 Loading Firebase credentials from file');
+      serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    }
 
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)

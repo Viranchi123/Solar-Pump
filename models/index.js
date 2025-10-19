@@ -132,23 +132,37 @@ export { User, Remark, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWareh
 // Sync all models with database
 export const syncModels = async () => {
   try {
-    await User.sync({ alter: true });
-    await Remark.sync({ alter: true });
-    await WorkOrder.sync({ alter: true });
-    await WorkOrderFactory.sync({ alter: true });
-    await WorkOrderJSR.sync({ alter: true });
-    await WorkOrderWarehouse.sync({ alter: true });
-    await WorkOrderCP.sync({ alter: true });
-    await WorkOrderContractor.sync({ alter: true });
-    await WorkOrderInspection.sync({ alter: true });
-    await WorkOrderFarmer.sync({ alter: true });
-    await WorkOrderStage.sync({ alter: true });
-    await BarcodeData.sync({ alter: true });
-    await Admin.sync({ alter: true });
-    await Notification.sync({ alter: true });
-    await DeviceToken.sync({ alter: true });
+    // In production, we don't want to alter tables (prevents deadlocks)
+    // Use migrations or manual DB updates for production schema changes
+    const isProduction = process.env.NODE_ENV === 'production';
+    const syncOptions = isProduction ? {} : { alter: true };
+    
+    if (isProduction) {
+      console.log('🔧 Production mode: Verifying tables exist (no schema alterations)');
+    } else {
+      console.log('🔧 Development mode: Syncing with { alter: true }');
+    }
+
+    await User.sync(syncOptions);
+    await Remark.sync(syncOptions);
+    await WorkOrder.sync(syncOptions);
+    await WorkOrderFactory.sync(syncOptions);
+    await WorkOrderJSR.sync(syncOptions);
+    await WorkOrderWarehouse.sync(syncOptions);
+    await WorkOrderCP.sync(syncOptions);
+    await WorkOrderContractor.sync(syncOptions);
+    await WorkOrderInspection.sync(syncOptions);
+    await WorkOrderFarmer.sync(syncOptions);
+    await WorkOrderStage.sync(syncOptions);
+    await BarcodeData.sync(syncOptions);
+    await Admin.sync(syncOptions);
+    await Notification.sync(syncOptions);
+    await DeviceToken.sync(syncOptions);
+    
     console.log('✅ All models synchronized successfully');
   } catch (error) {
     console.error('❌ Error syncing models:', error);
+    // Don't crash the server if sync fails
+    console.warn('⚠️  Continuing server startup despite sync error...');
   }
 };
