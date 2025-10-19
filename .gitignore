@@ -4,4 +4,4 @@ node_modules
 logs
 
 # Firebase service account credentials (IMPORTANT: Keep this secret!)
-config/firebase-service-account.json
+# config/firebase-service-account.json
