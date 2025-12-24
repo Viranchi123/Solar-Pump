@@ -143,21 +143,43 @@ export const syncModels = async () => {
       console.log('🔧 Development mode: Syncing with { alter: true }');
     }
 
+    // Sync models in dependency order to avoid foreign key constraint errors
+    // 1. Base models with no dependencies
     await User.sync(syncOptions);
-    await Remark.sync(syncOptions);
-    await WorkOrder.sync(syncOptions);
-    await WorkOrderFactory.sync(syncOptions);
-    await WorkOrderJSR.sync(syncOptions);
-    await WorkOrderWarehouse.sync(syncOptions);
-    await WorkOrderCP.sync(syncOptions);
-    await WorkOrderContractor.sync(syncOptions);
-    await WorkOrderInspection.sync(syncOptions);
-    await WorkOrderFarmer.sync(syncOptions);
-    await WorkOrderStage.sync(syncOptions);
-    await BarcodeData.sync(syncOptions);
     await Admin.sync(syncOptions);
-    await Notification.sync(syncOptions);
+    
+    // 2. WorkOrder (depends on User)
+    await WorkOrder.sync(syncOptions);
+    
+    // 3. Models that depend on User only
     await DeviceToken.sync(syncOptions);
+    await BarcodeData.sync(syncOptions);
+    
+    // 4. Models that depend on User and WorkOrder
+    await Remark.sync(syncOptions);
+    await WorkOrderStage.sync(syncOptions);
+    await Notification.sync(syncOptions);
+    
+    // 5. WorkOrder stage models (depend on WorkOrder and User)
+    await WorkOrderFactory.sync(syncOptions);
+    
+    // 6. WorkOrderJSR (depends on WorkOrder, WorkOrderFactory, User)
+    await WorkOrderJSR.sync(syncOptions);
+    
+    // 7. WorkOrderWarehouse (depends on WorkOrder, WorkOrderJSR, User)
+    await WorkOrderWarehouse.sync(syncOptions);
+    
+    // 8. WorkOrderCP (depends on WorkOrder, WorkOrderWarehouse, User)
+    await WorkOrderCP.sync(syncOptions);
+    
+    // 9. WorkOrderContractor (depends on WorkOrder, WorkOrderCP, User)
+    await WorkOrderContractor.sync(syncOptions);
+    
+    // 10. WorkOrderInspection (depends on WorkOrder, WorkOrderContractor, User)
+    await WorkOrderInspection.sync(syncOptions);
+    
+    // 11. WorkOrderFarmer (depends on WorkOrder, WorkOrderContractor, User)
+    await WorkOrderFarmer.sync(syncOptions);
     
     console.log('✅ All models synchronized successfully');
   } catch (error) {

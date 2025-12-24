@@ -400,6 +400,20 @@ export const getUserProfilePhoto = async (req, res) => {
   }
 };
 
+// Helper function to normalize location fields (convert single values to arrays)
+const normalizeLocationField = (field) => {
+  if (!field) return null;
+  if (Array.isArray(field)) {
+    // Filter out empty strings and return array
+    return field.filter(item => item && item.trim() !== '');
+  }
+  // Convert single string to array
+  if (typeof field === 'string' && field.trim() !== '') {
+    return [field.trim()];
+  }
+  return null;
+};
+
 // Register User
 export const registerUser = async (req, res) => {
   try {
@@ -423,10 +437,18 @@ export const registerUser = async (req, res) => {
       });
     }
 
+    // Normalize location fields to arrays (support both single values and arrays)
+    const normalizedState = normalizeLocationField(state);
+    const normalizedDistrict = normalizeLocationField(district);
+    const normalizedTaluka = normalizeLocationField(taluka);
+    const normalizedVillage = normalizeLocationField(village);
+
     // Role-based field validation
     const roleValidation = validateRoleFields(role.toLowerCase(), {
       name, phone, email, password, confirmPassword, company_name,
-      state, district, taluka, village, warehouse_location, location
+      state: normalizedState, district: normalizedDistrict, 
+      taluka: normalizedTaluka, village: normalizedVillage, 
+      warehouse_location, location
     });
 
     if (!roleValidation.isValid) {
@@ -484,12 +506,12 @@ export const registerUser = async (req, res) => {
       role: role.toLowerCase()
     };
 
-    // Add role-specific fields
+    // Add role-specific fields (now storing as arrays)
     if (company_name) userData.company_name = company_name;
-    if (state) userData.state = state;
-    if (district) userData.district = district;
-    if (taluka) userData.taluka = taluka;
-    if (village) userData.village = village;
+    if (normalizedState && normalizedState.length > 0) userData.state = normalizedState;
+    if (normalizedDistrict && normalizedDistrict.length > 0) userData.district = normalizedDistrict;
+    if (normalizedTaluka && normalizedTaluka.length > 0) userData.taluka = normalizedTaluka;
+    if (normalizedVillage && normalizedVillage.length > 0) userData.village = normalizedVillage;
     if (warehouse_location) userData.warehouse_location = warehouse_location;
     if (location) userData.location = location;
 
@@ -536,6 +558,11 @@ const validateRoleFields = (role, fields) => {
     };
   }
 
+  // Helper to check if location field is valid (array with at least one element)
+  const isValidLocationField = (field) => {
+    return field && Array.isArray(field) && field.length > 0;
+  };
+
   switch (role) {
     case 'factory':
       if (!fields.company_name) {
@@ -555,11 +582,12 @@ const validateRoleFields = (role, fields) => {
       break;
 
     case 'jsr':
-      if (!fields.company_name || !fields.state || !fields.district || 
-          !fields.taluka || !fields.village) {
+      if (!fields.company_name || !isValidLocationField(fields.state) || 
+          !isValidLocationField(fields.district) || !isValidLocationField(fields.taluka) || 
+          !isValidLocationField(fields.village)) {
         return {
           isValid: false,
-          message: 'JSR role requires: name, mobile, email, password, confirm password, company name, state, district, taluka, village'
+          message: 'JSR role requires: name, mobile, email, password, confirm password, company name, state (array), district (array), taluka (array), village (array). You can provide multiple values for each location field.'
         };
       }
       // Check for extra fields
@@ -604,11 +632,12 @@ const validateRoleFields = (role, fields) => {
       break;
 
     case 'contractor':
-      if (!fields.company_name || !fields.state || !fields.district || 
-          !fields.taluka || !fields.village) {
+      if (!fields.company_name || !isValidLocationField(fields.state) || 
+          !isValidLocationField(fields.district) || !isValidLocationField(fields.taluka) || 
+          !isValidLocationField(fields.village)) {
         return {
           isValid: false,
-          message: 'Contractor role requires: name, mobile, email, password, confirm password, company name, state, district, taluka, village'
+          message: 'Contractor role requires: name, mobile, email, password, confirm password, company name, state (array), district (array), taluka (array), village (array). You can provide multiple values for each location field.'
         };
       }
       // Check for extra fields
@@ -621,10 +650,11 @@ const validateRoleFields = (role, fields) => {
       break;
 
     case 'farmer':
-      if (!fields.state || !fields.district || !fields.taluka || !fields.village) {
+      if (!isValidLocationField(fields.state) || !isValidLocationField(fields.district) || 
+          !isValidLocationField(fields.taluka) || !isValidLocationField(fields.village)) {
         return {
           isValid: false,
-          message: 'Farmer role requires: name, mobile, email, password, confirm password, state, district, taluka, village'
+          message: 'Farmer role requires: name, mobile, email, password, confirm password, state (array), district (array), taluka (array), village (array). You can provide multiple values for each location field.'
         };
       }
       // Check for extra fields
@@ -637,11 +667,12 @@ const validateRoleFields = (role, fields) => {
       break;
 
     case 'inspection':
-      if (!fields.company_name || !fields.state || !fields.district || 
-          !fields.taluka || !fields.village) {
+      if (!fields.company_name || !isValidLocationField(fields.state) || 
+          !isValidLocationField(fields.district) || !isValidLocationField(fields.taluka) || 
+          !isValidLocationField(fields.village)) {
         return {
           isValid: false,
-          message: 'Inspection role requires: name, mobile, email, password, confirm password, company name, state, district, taluka, village'
+          message: 'Inspection role requires: name, mobile, email, password, confirm password, company name, state (array), district (array), taluka (array), village (array). You can provide multiple values for each location field.'
         };
       }
       // Check for extra fields

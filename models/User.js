@@ -50,22 +50,26 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('factory', 'jsr', 'whouse', 'cp', 'contractor', 'farmer', 'inspection', 'admin'),
     allowNull: false
   },
-  // Location fields
+  // Location fields - now support multiple values as JSON arrays
   state: {
-    type: DataTypes.STRING(100),
-    allowNull: true
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Array of states, e.g., ["State1", "State2"]'
   },
   district: {
-    type: DataTypes.STRING(100),
-    allowNull: true
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Array of districts, e.g., ["District1", "District2"]'
   },
   taluka: {
-    type: DataTypes.STRING(100),
-    allowNull: true
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Array of talukas, e.g., ["Taluka1", "Taluka2"]'
   },
   village: {
-    type: DataTypes.STRING(100),
-    allowNull: true
+    type: DataTypes.JSON,
+    allowNull: true,
+    comment: 'Array of villages, e.g., ["Village1", "Village2"]'
   },
   warehouse_location: {
     type: DataTypes.STRING(255),
