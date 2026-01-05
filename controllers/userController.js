@@ -418,7 +418,7 @@ const normalizeLocationField = (field) => {
 export const registerUser = async (req, res) => {
   try {
     const { role } = req.query;
-    const { name, phone, email, password, confirmPassword, company_name, state, district, taluka, village, warehouse_location, location } = req.body;
+    const { name, phone, email, password, confirmPassword, company_name, state, district, taluka, village, warehouse_location, location, beneficiaryId } = req.body;
 
     // Check if role is provided in query params
     if (!role) {
@@ -448,7 +448,7 @@ export const registerUser = async (req, res) => {
       name, phone, email, password, confirmPassword, company_name,
       state: normalizedState, district: normalizedDistrict, 
       taluka: normalizedTaluka, village: normalizedVillage, 
-      warehouse_location, location
+      warehouse_location, location, beneficiaryId
     });
 
     if (!roleValidation.isValid) {
@@ -514,6 +514,7 @@ export const registerUser = async (req, res) => {
     if (normalizedVillage && normalizedVillage.length > 0) userData.village = normalizedVillage;
     if (warehouse_location) userData.warehouse_location = warehouse_location;
     if (location) userData.location = location;
+    if (beneficiaryId) userData.beneficiaryId = beneficiaryId;
 
     // Create user
     const user = await User.create(userData);
@@ -533,7 +534,8 @@ export const registerUser = async (req, res) => {
         taluka: user.taluka,
         village: user.village,
         warehouse_location: user.warehouse_location,
-        location: user.location
+        location: user.location,
+        beneficiaryId: user.beneficiaryId
       }
     });
 
@@ -650,18 +652,31 @@ const validateRoleFields = (role, fields) => {
       break;
 
     case 'farmer':
+      if (!fields.beneficiaryId) {
+        return {
+          isValid: false,
+          message: 'Beneficiary ID is required for Farmer role'
+        };
+      }
+      // Validate beneficiaryId is alphanumeric
+      if (!/^[a-zA-Z0-9]+$/.test(fields.beneficiaryId)) {
+        return {
+          isValid: false,
+          message: 'Beneficiary ID must contain only alphanumeric characters'
+        };
+      }
       if (!isValidLocationField(fields.state) || !isValidLocationField(fields.district) || 
           !isValidLocationField(fields.taluka) || !isValidLocationField(fields.village)) {
         return {
           isValid: false,
-          message: 'Farmer role requires: name, mobile, email, password, confirm password, state (array), district (array), taluka (array), village (array). You can provide multiple values for each location field.'
+          message: 'Farmer role requires: name, mobile, email, password, confirm password, beneficiaryId, state (array), district (array), taluka (array), village (array). You can provide multiple values for each location field.'
         };
       }
       // Check for extra fields
       if (fields.company_name || fields.warehouse_location || fields.location) {
         return {
           isValid: false,
-          message: 'Farmer role should only have: name, mobile, email, password, confirm password, state, district, taluka, village'
+          message: 'Farmer role should only have: name, mobile, email, password, confirm password, beneficiaryId, state, district, taluka, village'
         };
       }
       break;
@@ -796,7 +811,7 @@ export const getRoleFields = async (req, res) => {
         description: 'Contractor registration fields'
       },
       farmer: {
-        required: ['name', 'phone', 'email', 'password', 'confirmPassword', 'state', 'district', 'taluka', 'village'],
+        required: ['name', 'phone', 'email', 'password', 'confirmPassword', 'beneficiaryId', 'state', 'district', 'taluka', 'village'],
         optional: [],
         description: 'Farmer registration fields'
       },

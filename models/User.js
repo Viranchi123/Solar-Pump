@@ -94,6 +94,17 @@ const User = sequelize.define('User', {
   is_active: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
+  },
+  beneficiaryId: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    validate: {
+      is: {
+        args: /^[a-zA-Z0-9]*$/,
+        msg: 'Beneficiary ID must contain only alphanumeric characters'
+      }
+    },
+    comment: 'Beneficiary ID for farmer role (alphanumeric only)'
   }
 }, {
   tableName: 'users',
