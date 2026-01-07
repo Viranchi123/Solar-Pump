@@ -223,6 +223,10 @@ export const createWorkOrder = async (req, res) => {
     });
 
     // Automatically create initial stage record
+    // Note: assigned_to should be null for admins since they're not in the users table
+    // Only set assigned_to if the user is a regular user (not an admin)
+    const assignedToUserId = (req.user.isAdmin || req.user.role === 'admin') ? null : req.user.id;
+    
     await WorkOrderStage.create({
       work_order_id: workOrder.id,
       stage_name: 'admin_created',
@@ -230,7 +234,7 @@ export const createWorkOrder = async (req, res) => {
       status: 'completed',
       started_at: new Date(),
       completed_at: new Date(),
-      assigned_to: req.user.id,
+      assigned_to: assignedToUserId,
       notes: 'Work order created by admin',
       stage_data: {
         total_quantity,
