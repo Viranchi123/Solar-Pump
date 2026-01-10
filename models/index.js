@@ -13,6 +13,7 @@ import BarcodeData from './BarcodeData.js';
 import Admin from './Admin.js';
 import Notification from './Notification.js';
 import DeviceToken from './DeviceToken.js';
+import { sequelize } from '../config/dbConnection.js';
 
 // Set up associations
 User.hasMany(Remark, { foreignKey: 'user_id', as: 'remarks' });
@@ -129,6 +130,109 @@ DeviceToken.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 // Export models
 export { User, Remark, WorkOrder, WorkOrderFactory, WorkOrderJSR, WorkOrderWarehouse, WorkOrderCP, WorkOrderContractor, WorkOrderInspection, WorkOrderFarmer, WorkOrderStage, BarcodeData, Admin, Notification, DeviceToken };
 
+// Migration helper to clean location fields before converting to JSON
+const migrateLocationFieldsToJSON = async () => {
+  try {
+    // Check if users table exists
+    const [tables] = await sequelize.query("SHOW TABLES LIKE 'users'");
+    if (tables.length === 0) {
+      console.log('📋 Users table does not exist yet, skipping migration');
+      return;
+    }
+
+    // Check if state column exists and its current type
+    const [columns] = await sequelize.query(
+      "SHOW COLUMNS FROM users WHERE Field IN ('state', 'district', 'taluka', 'village')"
+    );
+    
+    if (columns.length === 0) {
+      console.log('📋 Location columns do not exist yet, skipping migration');
+      return;
+    }
+
+    // Check if any column is already JSON type (case-insensitive)
+    const hasJSONColumn = columns.some(col => col.Type.toLowerCase().includes('json'));
+    if (hasJSONColumn) {
+      console.log('📋 Location columns already migrated to JSON, skipping migration');
+      return;
+    }
+
+    console.log('🔄 Migrating location fields to JSON format...');
+    
+    // Get all users with location data
+    const [users] = await sequelize.query('SELECT id, state, district, taluka, village FROM users');
+    
+    // Helper function to clean a location field value
+    const cleanLocationField = (value) => {
+      if (!value) return null;
+      
+      // If already a valid JSON string, try to parse it
+      if (typeof value === 'string') {
+        // Check if it's a JSON array string
+        if (value.trim().startsWith('[') && value.trim().endsWith(']')) {
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return JSON.stringify(parsed);
+            }
+          } catch (e) {
+            // Not valid JSON, continue to process as string
+          }
+        }
+        
+        // If it's a simple string (not "Invalid value" or empty), convert to array
+        const trimmed = value.trim();
+        if (trimmed && trimmed !== 'Invalid value.' && trimmed !== 'Invalid value') {
+          return JSON.stringify([trimmed]);
+        }
+      }
+      
+      // If already an array, stringify it
+      if (Array.isArray(value)) {
+        return value.length > 0 ? JSON.stringify(value) : null;
+      }
+      
+      // Otherwise, set to null
+      return null;
+    };
+
+    // Update each user's location fields
+    let updatedCount = 0;
+    for (const user of users) {
+      const cleanedState = cleanLocationField(user.state);
+      const cleanedDistrict = cleanLocationField(user.district);
+      const cleanedTaluka = cleanLocationField(user.taluka);
+      const cleanedVillage = cleanLocationField(user.village);
+      
+      // Only update if there are changes
+      if (cleanedState !== user.state || cleanedDistrict !== user.district || 
+          cleanedTaluka !== user.taluka || cleanedVillage !== user.village) {
+        await sequelize.query(
+          `UPDATE users SET 
+            state = ?, 
+            district = ?, 
+            taluka = ?, 
+            village = ? 
+          WHERE id = ?`,
+          {
+            replacements: [cleanedState, cleanedDistrict, cleanedTaluka, cleanedVillage, user.id]
+          }
+        );
+        updatedCount++;
+      }
+    }
+    
+    if (updatedCount > 0) {
+      console.log(`✅ Migrated ${updatedCount} user(s) location fields to JSON format`);
+    } else {
+      console.log('✅ Location fields already in correct format');
+    }
+  } catch (error) {
+    console.error('❌ Error during location field migration:', error.message);
+    // Don't throw - allow sync to continue
+  }
+};
+
 // Sync all models with database
 export const syncModels = async () => {
   try {
@@ -143,9 +247,26 @@ export const syncModels = async () => {
       console.log('🔧 Development mode: Syncing with { alter: true }');
     }
 
+    // Run migration to clean location fields before sync (runs in dev mode or if sync fails)
+    await migrateLocationFieldsToJSON();
+
     // Sync models in dependency order to avoid foreign key constraint errors
     // 1. Base models with no dependencies
-    await User.sync(syncOptions);
+    try {
+      await User.sync(syncOptions);
+    } catch (error) {
+      // If sync fails due to invalid JSON in location fields, run migration and retry
+      if (error.name === 'SequelizeDatabaseError' && 
+          error.original && 
+          (error.original.code === 'ER_INVALID_JSON_TEXT' || error.original.sqlMessage?.includes('Invalid JSON'))) {
+        console.log('⚠️  Sync failed due to invalid JSON data. Running migration...');
+        await migrateLocationFieldsToJSON();
+        // Retry sync after migration
+        await User.sync(syncOptions);
+      } else {
+        throw error;
+      }
+    }
     await Admin.sync(syncOptions);
     
     // 2. WorkOrder (depends on User)
