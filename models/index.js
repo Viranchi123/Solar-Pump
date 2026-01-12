@@ -233,6 +233,43 @@ const migrateLocationFieldsToJSON = async () => {
   }
 };
 
+// Migration helper to add beneficiaryId column if it doesn't exist
+const migrateBeneficiaryIdColumn = async () => {
+  try {
+    // Check if users table exists
+    const [tables] = await sequelize.query("SHOW TABLES LIKE 'users'");
+    if (tables.length === 0) {
+      console.log('📋 Users table does not exist yet, skipping beneficiaryId migration');
+      return;
+    }
+
+    // Check if beneficiaryId column exists
+    const [columns] = await sequelize.query(
+      "SHOW COLUMNS FROM users WHERE Field = 'beneficiaryId'"
+    );
+    
+    if (columns.length > 0) {
+      console.log('📋 beneficiaryId column already exists, skipping migration');
+      return;
+    }
+
+    console.log('🔄 Adding beneficiaryId column to users table...');
+    
+    // Add the beneficiaryId column
+    await sequelize.query(`
+      ALTER TABLE users 
+      ADD COLUMN beneficiaryId VARCHAR(100) NULL 
+      COMMENT 'Beneficiary ID for farmer role (alphanumeric only)' 
+      AFTER is_active
+    `);
+    
+    console.log('✅ Successfully added beneficiaryId column to users table');
+  } catch (error) {
+    console.error('❌ Error during beneficiaryId column migration:', error.message);
+    // Don't throw - allow sync to continue
+  }
+};
+
 // Sync all models with database
 export const syncModels = async () => {
   try {
@@ -247,8 +284,9 @@ export const syncModels = async () => {
       console.log('🔧 Development mode: Syncing with { alter: true }');
     }
 
-    // Run migration to clean location fields before sync (runs in dev mode or if sync fails)
+    // Run migrations before sync
     await migrateLocationFieldsToJSON();
+    await migrateBeneficiaryIdColumn();
 
     // Sync models in dependency order to avoid foreign key constraint errors
     // 1. Base models with no dependencies
@@ -261,6 +299,15 @@ export const syncModels = async () => {
           (error.original.code === 'ER_INVALID_JSON_TEXT' || error.original.sqlMessage?.includes('Invalid JSON'))) {
         console.log('⚠️  Sync failed due to invalid JSON data. Running migration...');
         await migrateLocationFieldsToJSON();
+        // Retry sync after migration
+        await User.sync(syncOptions);
+      } 
+      // If sync fails due to missing beneficiaryId column, run migration and retry
+      else if (error.name === 'SequelizeDatabaseError' && 
+               error.original && 
+               (error.original.code === 'ER_BAD_FIELD_ERROR' && error.original.sqlMessage?.includes('beneficiaryId'))) {
+        console.log('⚠️  Sync failed due to missing beneficiaryId column. Running migration...');
+        await migrateBeneficiaryIdColumn();
         // Retry sync after migration
         await User.sync(syncOptions);
       } else {
